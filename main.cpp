@@ -11,13 +11,14 @@ void schedulerStartCommand();
 void schedulerStopCommand();
 void reportUtilCommand();
 void clearCommand();
-void exitCommand();
-
+void exitCommand(bool* running);
 
 int main() {
         string command;
         printHeader();
-
+		
+		bool running = false;
+		
         while (true) {
             cout << "\nEnter command: ";
             getline(cin, command);
@@ -41,7 +42,7 @@ int main() {
                 clearCommand();
             }
             else if (command == "exit") {
-                exitCommand();
+                exitCommand(&running);
                 break;
             }
             else {
@@ -82,14 +83,14 @@ void reportUtilCommand() {
 }
 
 void clearCommand() {
-    // TODO: Clear the console screen and reprint the header
- 
-
     cout << "clear command recognized. Doing something." << endl;
+    
+    system("CLS");
+    printHeader();
 }
 
-void exitCommand() {
-    // TODO: Properly terminate application
-
+void exitCommand(bool* running) {
     cout << "exit command recognized. Doing something." << endl;
+    
+    *running = false;
 }
