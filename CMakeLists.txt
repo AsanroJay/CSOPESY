@@ -39,5 +39,6 @@ target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
 add_executable(csopesy
     main_gui.cpp
     Desktop.cpp
+    BootScreen.cpp
 )
 target_link_libraries(csopesy PRIVATE imgui)

@@ -10,6 +10,7 @@
 #include "imgui_impl_opengl3.h"
 
 #include "Desktop.h"
+#include "BootScreen.h"
 
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -18,11 +19,20 @@ static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
+// Boot/init logging to the attached console (mirrors the lecture demo).
+// fflush so lines appear immediately even when stdout is redirected/piped.
+static void bootLog(const char* tag, const char* msg) {
+    std::printf("[%s] %s\n", tag, msg);
+    std::fflush(stdout);
+}
+
 int main() {
     // === Phase 1: Bootstrapping - window system + GL context ===============
+    bootLog("BOOT", "Bootstrapping CSOPESY...");
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         return 1;
+    bootLog("GUI", "GLFW initialized");
 
     // OpenGL 3.0+ / GLSL 130. Good baseline for the ImGui OpenGL3 backend.
     const char* glsl_version = "#version 130";
@@ -34,6 +44,9 @@ int main() {
         return 1;
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable VSync
+    bootLog("GUI", "OpenGL context created (v3.0)");
+    bootLog("GUI", "Window created (1280x720)");
+    bootLog("GUI", "VSync enabled");
 
     // === Phase 2: Kernel Init - create ImGui context, install backends =====
     IMGUI_CHECKVERSION();
@@ -44,10 +57,17 @@ int main() {
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
+    bootLog("GUI", "ImGui context created");
+    bootLog("GUI", "GLFW + OpenGL3 backends attached");
+    bootLog("GUI", "Dark theme applied");
 
     // === Phase 3: System Services - construct the Desktop (Component 1) ====
     Desktop desktop;
+    BootScreen boot;
     ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+    bootLog("GUI", "Desktop environment constructed");
+    bootLog("Taskbar", "Taskbar ready (S1, S2, Task Manager)");
+    bootLog("BOOT", "System fully initialized and ready!");
 
     // Variables for tracking active UI Screens
 	bool active_screen_1 = false;
@@ -62,10 +82,16 @@ int main() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+
+        if (!boot.isComplete()) {
+            // Boot sequence runs first; the desktop appears once it finishes.
+            boot.draw();
+        } else {
+
         // --- Component 1: the Desktop is the base layer, drawn first. ------
         desktop.draw();
-        if (desktop.shutdownRequested())
-            glfwSetWindowShouldClose(window, true);
 
 		// --- Component 2: buttons for unique UI screens and Task Manager ---
 		if (active_screen_1) {
@@ -186,9 +212,6 @@ int main() {
         }
 
         // --- Component 3: Window closely resembling the Windows task manager ---
-        int display_w, display_h;
-		glfwGetFramebufferSize(window, &display_w, &display_h);
-
         float panel_h = 50.0f;
 		ImGui::SetNextWindowPos(ImVec2(0, (float)display_h - panel_h));
 		ImGui::SetNextWindowSize(ImVec2((float)display_w, panel_h));
@@ -212,10 +235,39 @@ int main() {
 
             if (ImGui::Button("Task Manager"))
 				active_task_manager = !active_task_manager;
-            ImGui::SameLine();
+
+            // --- PWR: relocated into the taskbar so it isn't hidden; the only
+            // sanctioned shutdown (the window's X / Alt+F4 is "force exit"). ---
+            const float pwr_w = 60.0f;
+            ImGui::SameLine(ImGui::GetWindowWidth() - pwr_w - 10.0f);
+            ImGui::PushStyleColor(ImGuiCol_Button,        IM_COL32(150, 40, 40, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(200, 60, 60, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  IM_COL32(120, 25, 25, 255));
+            if (ImGui::Button("PWR", ImVec2(pwr_w, 0.0f)))
+                ImGui::OpenPopup("Shut Down");
+            ImGui::PopStyleColor(3);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Shut down CSOPESY");
+
+            // Confirmation modal so a stray click can't kill the session.
+            ImVec2 pwr_center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(pwr_center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+            if (ImGui::BeginPopupModal("Shut Down", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("Shut down the CSOPESY emulator?");
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+                if (ImGui::Button("Shut Down", ImVec2(120.0f, 0.0f)))
+                    glfwSetWindowShouldClose(window, true);
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+                    ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
             ImGui::End();
 		}
         ImGui::PopStyleVar(2);
+        } // end else (boot complete)
 
         // Rendering
         ImGui::Render();

@@ -25,7 +25,6 @@ void Desktop::draw() {
 
     drawWallpaper();
     drawClock();
-    drawPowerButton();
 
     ImGui::End();
 }
@@ -89,44 +88,4 @@ void Desktop::drawClock() {
     const float dateX = boxMax.x - pad - dateSz.x;
     const float dateY = timeY + timeSz.y + lineGap;
     dl->AddText(ImVec2(dateX, dateY), IM_COL32(200, 210, 225, 255), dateBuf);
-}
-
-void Desktop::drawPowerButton() {
-    const ImGuiViewport* vp = ImGui::GetMainViewport();
-    const float margin = 16.0f;
-    const ImVec2 btnSize(90.0f, 34.0f);
-
-    // Bottom-right corner (where it will later live in the taskbar tray).
-    const ImVec2 pos(vp->Pos.x + vp->Size.x - btnSize.x - margin,
-                     vp->Pos.y + vp->Size.y - btnSize.y - margin);
-    ImGui::SetCursorScreenPos(pos);
-
-    ImGui::PushStyleColor(ImGuiCol_Button,        IM_COL32(150, 40, 40, 220));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(200, 60, 60, 255));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  IM_COL32(120, 25, 25, 255));
-    if (ImGui::Button("PWR", btnSize))
-        ImGui::OpenPopup("Shut Down");
-    ImGui::PopStyleColor(3);
-
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Shut down CSOPESY");
-
-    // Confirmation modal, centered, so a stray click can't kill the session.
-    const ImVec2 center = vp->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal("Shut Down", nullptr,
-                               ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Shut down the CSOPESY emulator?");
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        if (ImGui::Button("Shut Down", ImVec2(120.0f, 0.0f))) {
-            m_shutdownRequested = true;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
-            ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-    }
 }
