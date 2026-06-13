@@ -1,6 +1,5 @@
 {
   "cmake.useCMakePresets": "always",
-  "cmake.cmakePath": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe",
   "cmake.useVsDeveloperEnvironment": "always",
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
 }
