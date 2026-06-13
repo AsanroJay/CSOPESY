@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "csopesy",
+  "version": "0.1.0",
+  "description": "CSOPESY desktop-style OS emulator (Dear ImGui + GLFW + OpenGL3).",
+  "dependencies": [
+    "glfw3"
+  ],
+  "builtin-baseline": "b216ddff25a1f432870e6c340ce79357049ef86e"
+}
