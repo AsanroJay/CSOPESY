@@ -69,19 +69,79 @@ int main() {
 
 		// --- Component 2: buttons for unique UI screens and Task Manager ---
 		if (active_screen_1) {
-			ImGui::Begin("Screen 1");
-			ImGui::Text("This is Screen 1");
-			if (ImGui::Button("Close Screen 1"))
-                active_screen_1 = false;
-			ImGui::End();
-		}
+            ImGui::Begin("System Information", &active_screen_1);
+            
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "System Information");
+            ImGui::Separator();
 
+            auto row = [](const char* label, const char* value) {
+                ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("%s", label);
+                ImGui::TableSetColumnIndex(1); ImGui::Text("%s", value);
+            };
+
+            if (ImGui::BeginTable("sysinfo", 2, ImGuiTableFlags_SizingFixedFit)) {
+                ImGui::TableNextRow(); row("Computer Name:",        "CSOPESY-PC");
+                ImGui::TableNextRow(); row("Operating System:",     "CSOPESY OS 1.0 64-bit");
+                ImGui::TableNextRow(); row("Language:",             "English (Regional Setting: English)");
+                ImGui::TableNextRow(); row("System Manufacturer:",  "CSOPESY");
+                ImGui::TableNextRow(); row("System Model:",         "Emulator v1.0");
+                ImGui::TableNextRow(); row("BIOS:",                 "CSOPESY BIOS v1.0");
+                ImGui::TableNextRow(); row("Processor:",            "AMD Ryzen 7 260w/ Radeon 780M Graphics (16 CPUs), ~3.8GHz");
+                ImGui::TableNextRow(); row("Memory:",               "16384MB RAM");
+                ImGui::TableNextRow(); row("Page file:",            "19556MB used, 6960MB available");
+                ImGui::TableNextRow(); row("DirectX Version:",      "DirectX 12");
+                ImGui::EndTable();
+            }
+
+            ImGui::End();
+        }
         if (active_screen_2) {
-			ImGui::Begin("Screen 2");
-			ImGui::Text("This is Screen 2");
-			if (ImGui::Button("Close Screen 2"))
-                active_screen_2 = false;
-			ImGui::End();
+            ImGui::Begin("System Log", &active_screen_2);
+            
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "System Boot Log");
+            ImGui::Separator();
+
+            // Phase 1
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "[PHASE 1] Bootstrapping");
+            ImGui::TextDisabled("  [ OK ] GLFW initialized");
+            ImGui::TextDisabled("  [ OK ] OpenGL context created (v3.0)");
+            ImGui::TextDisabled("  [ OK ] Window created (1280x720)");
+            ImGui::TextDisabled("  [ OK ] VSync enabled");
+            ImGui::Separator();
+
+            // Phase 2
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "[PHASE 2] Kernel Initialization");
+            ImGui::TextDisabled("  [ OK ] ImGui context created");
+            ImGui::TextDisabled("  [ OK ] Keyboard navigation enabled");
+            ImGui::TextDisabled("  [ OK ] GLFW backend attached");
+            ImGui::TextDisabled("  [ OK ] OpenGL3 renderer attached");
+            ImGui::TextDisabled("  [ OK ] Dark theme applied");
+            ImGui::Separator();
+
+            // Phase 3
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "[PHASE 3] System Services");
+            ImGui::TextDisabled("  [ OK ] Memory manager initialized (16384MB)");
+            ImGui::TextDisabled("  [ OK ] Process scheduler started");
+            ImGui::TextDisabled("  [ OK ] CPU core detection complete (16 cores)");
+            ImGui::TextDisabled("  [ OK ] File system mounted");
+            ImGui::TextDisabled("  [ OK ] Desktop environment constructed");
+            ImGui::Separator();
+
+            // Phase 4
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "[PHASE 4] Main Loop");
+            ImGui::TextDisabled("  [ OK ] Input polling active");
+            ImGui::TextDisabled("  [ OK ] UI render pipeline ready");
+            ImGui::TextDisabled("  [ OK ] Taskbar loaded");
+            ImGui::TextDisabled("  [ OK ] Task Manager service running");
+            ImGui::TextDisabled("  [ OK ] 10 processes registered");
+            ImGui::Separator();
+
+            // Phase 5
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.0f, 1.0f), "[PHASE 5] Ready");
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "  [ OK ] CSOPESY OS boot complete.");
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "  > System is ready.");
+
+            ImGui::End();
         }
 
         if (active_task_manager) {
