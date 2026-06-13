@@ -225,15 +225,15 @@ int main() {
             ImGui::AlignTextToFramePadding();
             ImGui::SameLine();
 
-			if (ImGui::Button("S1"))
-				active_screen_1 = !active_screen_1;
+			if (ImGui::Button("[i] Sys Info"))
+                active_screen_1 = !active_screen_1;
             ImGui::SameLine();
 
-            if (ImGui::Button("S2"))
+            if (ImGui::Button("[~] Sys Log"))
                 active_screen_2 = !active_screen_2;
             ImGui::SameLine();
 
-            if (ImGui::Button("Task Manager"))
+            if (ImGui::Button("[#] Task Manager"))
 				active_task_manager = !active_task_manager;
 
             // --- PWR: relocated into the taskbar so it isn't hidden; the only
