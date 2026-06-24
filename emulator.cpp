@@ -17,6 +17,7 @@ int main() {
     // "scheduler-start" generates processes.
     FCFSScheduler scheduler(Config::NUM_CORES);
     scheduler.start();
+    
 
     string line;
     while (true) {
@@ -36,16 +37,26 @@ int main() {
         string argument;
         iss >> command >> argument;
 
+        // initialize should be called first
+        if (!Config::initialized && command != "initialize" && command != "exit" && !command.empty()) {
+            std::cout << "Please run \"initialize\" first.\n";
+            continue;
+        }
+
         if (command.empty()) {
             // ignore blank input
         }
         else if (command == "initialize") {
-            cout << "Configuration:\n";
-            cout << "  Scheduler       : FCFS (non-preemptive)\n";
-            cout << "  CPU cores       : " << Config::NUM_CORES << "\n";
-            cout << "  Processes       : " << Config::NUM_PROCESSES
-                 << " (type 'scheduler-start' to generate)\n";
-            cout << "  Prints/process  : " << Config::PRINTS_PER_PROCESS << "\n";
+            if (Config::loadFromFile()) {
+                std::cout << "Configuration loaded:\n";
+                std::cout << "  Scheduler        : " << Config::scheduler << "\n";
+                std::cout << "  CPU cores        : " << Config::numCpu << "\n";
+                std::cout << "  Batch freq       : " << Config::batchProcessFreq << " CPU cycle(s)\n";
+                std::cout << "  Min instructions : " << Config::minIns << "\n";
+                std::cout << "  Max instructions : " << Config::maxIns << "\n";
+                std::cout << "  Delay per exec   : " << Config::delayPerExec << "\n";
+                std::cout << "Type scheduler-start to begin processes";
+            }
         }
         else if (command == "scheduler-start") {
             scheduler.generateProcesses(Config::NUM_PROCESSES, Config::PRINTS_PER_PROCESS);
@@ -96,5 +107,5 @@ void printHeader() {
     std::cout << " \x1b[1m\x1b[36m `.____ .' \\______.' `.___.'|_____|  |________| \\______.' |______|  \x1b[0m\n";
     std::cout << "\n";
     std::cout << "Welcome to CSOPESY command line! Type \"exit\" to quit the terminal or type \"clear\" to clear the screen. \n";
-    std::cout << "Type \"scheduler-start\" to create the processes and run the FCFS scheduler.\n";
+    std::cout << "Type \"initalize\" to load system configuration\n";
 }

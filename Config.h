@@ -1,18 +1,27 @@
 #pragma once
+#include <string>
 
-// Central place for the emulator's tunable settings for this homework.
 namespace Config {
-    constexpr int  NUM_CORES = 4;             // CPU cores = worker threads
-    constexpr int  NUM_PROCESSES = 10;        // processes created by "scheduler-start"
-    constexpr int  PRINTS_PER_PROCESS = 100;  // print instructions per process
+    // Populated by loadFromFile();
+    inline bool initialized = false;
 
-    // Delay applied after each executed instruction.
-    // 0 = near-instant (current choice). Set to ~30 to make the running -> finished
-    // transition visible when typing "screen -ls" during the recording.
-    constexpr int  PER_INSTRUCTION_DELAY_MS = 0;
+    // Config values 
+    inline int         numCpu            = 4;
+    inline std::string scheduler         = "fcfs";
+    inline int         quantumCycles     = 5;
+    inline int         batchProcessFreq  = 1;
+    inline int         minIns            = 1000;
+    inline int         maxIns            = 2000;
+    inline int         delayPerExec      = 0;
 
-    // Whether the "print" instruction writes a .txt file per process.
-    // The homework PDF requires this; set to false for the machine-project
-    // submission so file I/O does not slow the scheduler.
-    constexpr bool WRITE_PRINT_FILES = true;
+    // Legacy aliases so existing Scheduler/Process code compiles unchanged
+    inline int& NUM_CORES             = numCpu;
+    inline int NUM_PROCESSES = 100;
+    inline int& PRINTS_PER_PROCESS    = maxIns;   // temporary; replace later
+    inline int& PER_INSTRUCTION_DELAY_MS = delayPerExec;
+    inline bool WRITE_PRINT_FILES     = true;
+
+    // Reads config.txt from the working directory.
+    // Returns true on success, prints an error and returns false on failure.
+    bool loadFromFile(const std::string& path = "config.txt");
 }
