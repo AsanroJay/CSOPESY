@@ -10,7 +10,9 @@ Process::Process(int pid, const std::string& name)
       commandCounter(0),
       coreId(-1),
       currentState(READY),
-      fileOpened(false) {}
+      fileOpened(false),
+      screenSessionExists(false),
+      screenAttached(false) {}
 
 void Process::addCommand(std::shared_ptr<ICommand> command) {
     commandList.push_back(std::move(command));
@@ -27,6 +29,12 @@ void Process::executeCurrentCommand(int coreId) {
 
 void Process::finishExecution() {
     currentState.store(FINISHED);
+
+    {
+        std::lock_guard<std::mutex> lock(screenMutex);
+        screenLogs.push_back("Finished!");
+    }
+
     if (fileOpened) {
         outFile.close();
         fileOpened = false;
@@ -41,6 +49,15 @@ void Process::logPrint(int coreId, const std::string& message) {
     if (!Config::WRITE_PRINT_FILES) {
         return;
     }
+
+    std::string timestamp = currentTimestamp();
+    std::string entry = "(" + timestamp + ") Core:" + std::to_string(coreId) + " \"" + message + "\"";
+
+    {
+        std::lock_guard<std::mutex> lock(screenMutex);
+        screenLogs.push_back(entry);
+    }
+
     if (!fileOpened) {
         outFile.open(name + ".txt");
         outFile << "Process name: " << name << "\n";
@@ -85,4 +102,30 @@ int Process::getCurrentLine() const {
 
 int Process::getTotalLines() const {
     return static_cast<int>(commandList.size());
+}
+
+void Process::attachScreen() {
+    std::lock_guard<std::mutex> lock(screenMutex);
+    screenSessionExists = true;
+    screenAttached = true;
+}
+
+void Process::detachScreen() {
+    std::lock_guard<std::mutex> lock(screenMutex);
+    screenAttached = false;
+}
+
+bool Process::hasScreenSession() const {
+    std::lock_guard<std::mutex> lock(screenMutex);
+    return screenSessionExists;
+}
+
+bool Process::isScreenAttached() const {
+    std::lock_guard<std::mutex> lock(screenMutex);
+    return screenAttached;
+}
+
+std::vector<std::string> Process::getScreenLogs() const {
+    std::lock_guard<std::mutex> lock(screenMutex);
+    return screenLogs;
 }

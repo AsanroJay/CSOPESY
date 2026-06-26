@@ -3,6 +3,7 @@
 #include <atomic>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,12 @@ public:
     int getCurrentLine() const;      // instructions executed so far
     int getTotalLines() const;       // total instructions
 
+    void attachScreen();
+    void detachScreen();
+    bool hasScreenSession() const;
+    bool isScreenAttached() const;
+    std::vector<std::string> getScreenLogs() const;
+
 private:
     int pid;
     std::string name;
@@ -59,5 +66,9 @@ private:
 
     std::ofstream outFile;           // per-process log; opened lazily on first print
     bool fileOpened;
-    
+
+    std::vector<std::string> screenLogs;
+    mutable std::mutex screenMutex;
+    bool screenSessionExists;
+    bool screenAttached;
 };
