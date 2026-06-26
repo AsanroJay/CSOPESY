@@ -39,6 +39,8 @@ void FCFSScheduler::startGeneration() {
 
 void FCFSScheduler::stopGeneration() {
     isGenerating.store(false);
+    std::lock_guard<std::mutex> lock(queueMutex);
+    while (!readyQueue.empty()) readyQueue.pop();
 }
 
 void FCFSScheduler::shutdown() {
