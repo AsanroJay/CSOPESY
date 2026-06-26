@@ -16,7 +16,6 @@ namespace Config {
 
     // Legacy aliases so existing Scheduler/Process code compiles unchanged
     inline int& NUM_CORES             = numCpu;
-    inline int NUM_PROCESSES = 100;
     inline int& PRINTS_PER_PROCESS    = maxIns;   // temporary; replace later
     inline int& PER_INSTRUCTION_DELAY_MS = delayPerExec;
     inline bool WRITE_PRINT_FILES     = true;

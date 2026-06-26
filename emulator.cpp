@@ -12,85 +12,79 @@
 using namespace std;
 
 void printHeader();
-
-// The central background continuous execution loop engine
 void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, FCFSScheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning);
 
 int main() {
     printHeader();
 
-    // Setup the shared memory structures for the driver layout
-    auto cpuCycles = std::make_shared<std::atomic<uint64_t>>(0);
+    auto cpuCycles     = std::make_shared<std::atomic<uint64_t>>(0);
     auto systemRunning = std::make_shared<std::atomic<bool>>(true);
 
-    // Pass the shared pointer to the clock into the scheduler initialization
-    FCFSScheduler scheduler(Config::NUM_CORES, cpuCycles);
-    scheduler.start();
-    
-    // Spin up the background step engine thread
-    std::thread engineThread(runExecutionEngine, cpuCycles, std::ref(scheduler), systemRunning);
+    // Declared as pointers, only constructed after "initialize" loads config
+    std::unique_ptr<FCFSScheduler> scheduler;
+    std::thread engineThread;
 
     string line;
     while (true) {
         cout << "\nEnter command: ";
-        if (!getline(cin, line)) {
-            break;  // EOF (e.g. input redirected) -> shut down cleanly
-        }
+        if (!getline(cin, line)) break;
 
-        // Strip a leading UTF-8 BOM, which can appear on the first line when
-        // input is piped/redirected rather than typed.
-        if (line.rfind("\xEF\xBB\xBF", 0) == 0) {
-            line.erase(0, 3);
-        }
+        if (line.rfind("\xEF\xBB\xBF", 0) == 0) line.erase(0, 3);
 
         istringstream iss(line);
-        string command;
-        string argument;
+        string command, argument;
         iss >> command >> argument;
 
-        // initialize should be called first
         if (!Config::initialized && command != "initialize" && command != "exit" && !command.empty()) {
-            std::cout << "Please run \"initialize\" first.\n";
+            cout << "Please run \"initialize\" first.\n";
             continue;
         }
 
         if (command.empty()) {
-            // ignore blank input
+            // ignore
         }
         else if (command == "initialize") {
+            if (scheduler) {
+                cout << "Already initialized.\n";
+                continue;
+            }
             if (Config::loadFromFile()) {
-                std::cout << "Configuration loaded:\n";
-                std::cout << "  Scheduler        : " << Config::scheduler << "\n";
-                std::cout << "  CPU cores        : " << Config::numCpu << "\n";
-                std::cout << "  Batch freq       : " << Config::batchProcessFreq << " CPU cycle(s)\n";
-                std::cout << "  Min instructions : " << Config::minIns << "\n";
-                std::cout << "  Max instructions : " << Config::maxIns << "\n";
-                std::cout << "  Delay per exec   : " << Config::delayPerExec << "\n";
-                std::cout << "Type scheduler-start to begin processes";
+                scheduler = std::make_unique<FCFSScheduler>(Config::numCpu, cpuCycles);
+                scheduler->start();
+                engineThread = std::thread(runExecutionEngine, cpuCycles,
+                                           std::ref(*scheduler), systemRunning);
+
+                cout << "Configuration loaded:\n";
+                cout << "  Scheduler        : " << Config::scheduler << "\n";
+                cout << "  CPU cores        : " << Config::numCpu << "\n";
+                cout << "  Batch freq       : " << Config::batchProcessFreq << " CPU cycle(s)\n";
+                cout << "  Min instructions : " << Config::minIns << "\n";
+                cout << "  Max instructions : " << Config::maxIns << "\n";
+                cout << "  Delay per exec   : " << Config::delayPerExec << "\n";
+                cout << "Type \"scheduler-start\" to begin generating processes.\n";
             }
         }
         else if (command == "scheduler-start") {
-            scheduler.startGeneration();
-            cout << "Continuous background process generation started.\n";
-            cout << "Generating processes every " << Config::batchProcessFreq << " CPU cycle(s).\n";
+            scheduler->startGeneration();
+            cout << "Process generation started. Every " << Config::batchProcessFreq << " CPU cycle(s).\n";
         }
         else if (command == "scheduler-stop") {
-            scheduler.stopGeneration();
+            scheduler->stopGeneration();
             cout << "Process generation stopped. Active processes will run to completion.\n";
         }
         else if (command == "screen") {
             if (argument == "-ls") {
-                scheduler.printStatus(cout);
+                scheduler->printStatus(cout);
             }
             else if (argument == "-s" || argument == "-r") {
-                cout << "screen " << argument << " is not used in this homework.\n";
+                cout << "screen " << argument << " not yet implemented.\n";
             }
             else {
-                cout << "Usage: screen -ls\n";
+                cout << "Usage: screen -ls | screen -s <name> | screen -r <name>\n";
             }
         }
         else if (command == "report-util") {
-            scheduler.writeReport("csopesy-log.txt");
+            scheduler->writeReport("csopesy-log.txt");
             cout << "Report generated at csopesy-log.txt!\n";
         }
         else if (command == "clear") {
@@ -98,11 +92,9 @@ int main() {
             printHeader();
         }
         else if (command == "exit") {
-            systemRunning->store(false); // Stop the background execution loop cleanly
-            if (engineThread.joinable()) {
-                engineThread.join();
-            }
-            scheduler.shutdown();
+            systemRunning->store(false);
+            if (engineThread.joinable()) engineThread.join();
+            if (scheduler) scheduler->shutdown();
             break;
         }
         else {
@@ -121,20 +113,15 @@ void printHeader() {
     std::cout << " \x1b[1m\x1b[33m\\ `.___.'\\| \\____) |\\  `-'  /_| |_    _| |__/ || \\____) |  _|  |_    \x1b[0m\n";
     std::cout << " \x1b[1m\x1b[36m `.____ .' \\______.' `.___.'|_____|  |________| \\______.' |______|  \x1b[0m\n";
     std::cout << "\n";
-    std::cout << "Welcome to CSOPESY command line! Type \"exit\" to quit the terminal or type \"clear\" to clear the screen. \n";
-    std::cout << "Type \"initialize\" to load system configuration\n";
+    std::cout << "Welcome to CSOPESY command line! Type \"exit\" to quit or \"clear\" to clear the screen.\n";
+    std::cout << "Type \"initialize\" to load system configuration.\n";
 }
 
-// The central background continuous execution loop engine
 void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, FCFSScheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning) {
     while (systemRunning->load()) {
-        // 1.) Clock cycle increments
         cpuCycles->fetch_add(1);
-
-        // 2.) Everything executes one step and waits for completion
         scheduler.runSingleCycleStep();
 
-        // 3.) Loop Back pacing delay
         int delay = (Config::delayPerExec > 0) ? Config::delayPerExec : 1;
         std::this_thread::sleep_for(std::chrono::milliseconds(delay));
     }
