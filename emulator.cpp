@@ -7,12 +7,12 @@
 #include <thread>
 
 #include "Config.h"
-#include "Scheduler.h"
+#include "Scheduler.h"  
 
 using namespace std;
 
 void printHeader();
-void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, FCFSScheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning);
+void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles,Scheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning);
 
 int main() {
     printHeader();
@@ -21,7 +21,7 @@ int main() {
     auto systemRunning = std::make_shared<std::atomic<bool>>(true);
 
     // Declared as pointers, only constructed after "initialize" loads config
-    std::unique_ptr<FCFSScheduler> scheduler;
+    std::unique_ptr<Scheduler> scheduler;
     std::thread engineThread;
 
     string line;
@@ -49,7 +49,7 @@ int main() {
                 continue;
             }
             if (Config::loadFromFile()) {
-                scheduler = std::make_unique<FCFSScheduler>(Config::numCpu, cpuCycles);
+                scheduler = std::make_unique<Scheduler>(Config::numCpu, cpuCycles);
                 scheduler->start();
                 engineThread = std::thread(runExecutionEngine, cpuCycles,
                                            std::ref(*scheduler), systemRunning);
@@ -117,7 +117,7 @@ void printHeader() {
     std::cout << "Type \"initialize\" to load system configuration.\n";
 }
 
-void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, FCFSScheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning) {
+void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, Scheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning) {
     while (systemRunning->load()) {
         cpuCycles->fetch_add(1);
         scheduler.runSingleCycleStep();
