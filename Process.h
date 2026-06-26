@@ -59,4 +59,5 @@ private:
 
     std::ofstream outFile;           // per-process log; opened lazily on first print
     bool fileOpened;
+    
 };

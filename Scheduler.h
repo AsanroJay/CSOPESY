@@ -21,40 +21,24 @@
 //     completion (non-preemptive), then frees the core for the next process.
 class FCFSScheduler {
 public:
-    explicit FCFSScheduler(int numCores);
+    // Constructor accepts the shared pointer to the atomic clock
+    explicit FCFSScheduler(int numCores, std::shared_ptr<std::atomic<uint64_t>> externalClock);
     ~FCFSScheduler();
 
-    // Spawns the scheduler thread and the per-core worker threads. They stay
-    // idle until processes are generated.
+    // Spawns the per-core worker threads only (Master scheduler thread removed)
     void start();
 
-    // Creates `count` processes (process01, process02, ...), each with
-    // `printsEach` identical print instructions, and enqueues them.
-    void generateProcesses(int count, int printsEach);
-
-    // Stops the dispatcher from assigning any further processes.
-    void stopDispatch();
-
-    // Signals all threads to stop and joins them. Safe to call more than once.
+    void startGeneration();
+    void stopGeneration();
     void shutdown();
-
-    // Renders the "screen -ls" status (running + finished processes).
     void printStatus(std::ostream& os);
-
-    // Writes the same status to a file (used by "report-util").
     void writeReport(const std::string& path);
 
-private:
-    // One per CPU core. mutex/cv guard the handshake between the dispatcher
-    // (which fills `current`) and the worker (which drains it).
-    struct CoreSlot {
-        std::mutex mutex;
-        std::condition_variable cv;
-        std::shared_ptr<Process> current;  // assigned process (nullptr = core free)
-    };
+    // EXPLICIT TICK STEP: Called by main() on every frame pass
+    void runSingleCycleStep();
 
-    void schedulerLoop();          // dispatcher thread body
-    void workerLoop(int coreId);   // per-core worker thread body
+private:
+    void workerLoop(int coreId);   // per-core worker thread body (Regulated single-step worker)
 
     int numCores;
 
@@ -64,12 +48,25 @@ private:
     std::queue<std::shared_ptr<Process>> readyQueue;
     std::mutex queueMutex;
 
-    std::vector<std::unique_ptr<CoreSlot>> cores;  // unique_ptr: CoreSlot is non-movable
+    struct CoreSlot {
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::shared_ptr<Process> current = nullptr;  // assigned process (nullptr = core free)
+        
+        // Coordination flags to ensure strict 1-instruction-per-tick behavior
+        bool tickSignal = false;
+        bool stepCompleted = false;
+    };
 
-    std::thread schedulerThread;
+    std::vector<std::unique_ptr<CoreSlot>> cores;  // unique_ptr: CoreSlot is non-movable
     std::vector<std::thread> workerThreads;
 
     std::atomic<bool> shuttingDown;
-    std::atomic<bool> dispatching;
+    std::atomic<bool> isGenerating; 
     std::atomic<int> nextPid;
+    
+    // Shared pointer to the atomic master clock residing in emulator.cpp
+    std::shared_ptr<std::atomic<uint64_t>> globalCpuCycles; 
+
+    std::atomic<uint64_t> lastGeneratedCycle{0};
 };

@@ -2,6 +2,9 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <atomic>
+#include <memory>
+#include <thread>
 
 #include "Config.h"
 #include "Scheduler.h"
@@ -10,14 +13,22 @@ using namespace std;
 
 void printHeader();
 
+// The central background continuous execution loop engine
+void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, FCFSScheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning);
+
 int main() {
     printHeader();
 
-    // The scheduler + 4 worker threads start now but stay idle until
-    // "scheduler-start" generates processes.
-    FCFSScheduler scheduler(Config::NUM_CORES);
+    // Setup the shared memory structures for the driver layout
+    auto cpuCycles = std::make_shared<std::atomic<uint64_t>>(0);
+    auto systemRunning = std::make_shared<std::atomic<bool>>(true);
+
+    // Pass the shared pointer to the clock into the scheduler initialization
+    FCFSScheduler scheduler(Config::NUM_CORES, cpuCycles);
     scheduler.start();
     
+    // Spin up the background step engine thread
+    std::thread engineThread(runExecutionEngine, cpuCycles, std::ref(scheduler), systemRunning);
 
     string line;
     while (true) {
@@ -59,13 +70,13 @@ int main() {
             }
         }
         else if (command == "scheduler-start") {
-            scheduler.generateProcesses(Config::NUM_PROCESSES, Config::PRINTS_PER_PROCESS);
-            cout << "Generated " << Config::NUM_PROCESSES << " processes, each with "
-                 << Config::PRINTS_PER_PROCESS << " print commands.\n";
+            scheduler.startGeneration();
+            cout << "Continuous background process generation started.\n";
+            cout << "Generating processes every " << Config::batchProcessFreq << " CPU cycle(s).\n";
         }
         else if (command == "scheduler-stop") {
-            scheduler.stopDispatch();
-            cout << "Scheduler stopped accepting new processes.\n";
+            scheduler.stopGeneration();
+            cout << "Process generation stopped. Active processes will run to completion.\n";
         }
         else if (command == "screen") {
             if (argument == "-ls") {
@@ -87,6 +98,10 @@ int main() {
             printHeader();
         }
         else if (command == "exit") {
+            systemRunning->store(false); // Stop the background execution loop cleanly
+            if (engineThread.joinable()) {
+                engineThread.join();
+            }
             scheduler.shutdown();
             break;
         }
@@ -107,5 +122,20 @@ void printHeader() {
     std::cout << " \x1b[1m\x1b[36m `.____ .' \\______.' `.___.'|_____|  |________| \\______.' |______|  \x1b[0m\n";
     std::cout << "\n";
     std::cout << "Welcome to CSOPESY command line! Type \"exit\" to quit the terminal or type \"clear\" to clear the screen. \n";
-    std::cout << "Type \"initalize\" to load system configuration\n";
+    std::cout << "Type \"initialize\" to load system configuration\n";
+}
+
+// The central background continuous execution loop engine
+void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, FCFSScheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning) {
+    while (systemRunning->load()) {
+        // 1.) Clock cycle increments
+        cpuCycles->fetch_add(1);
+
+        // 2.) Everything executes one step and waits for completion
+        scheduler.runSingleCycleStep();
+
+        // 3.) Loop Back pacing delay
+        int delay = (Config::delayPerExec > 0) ? Config::delayPerExec : 1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+    }
 }

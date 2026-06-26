@@ -8,7 +8,12 @@ class Process;  // forward declaration (a command executes against its owning pr
 class ICommand {
 public:
     enum CommandType {
-        PRINT
+        PRINT,
+        DECLARE,
+        ADD,
+        SUBTRACT,
+        SLEEP,
+        FOR
     };
 
     explicit ICommand(CommandType type) : commandType(type) {}
