@@ -74,9 +74,9 @@ void FCFSScheduler::runSingleCycleStep() {
         std::string name = "process" + zeroPad(pid, 2);
         auto process = std::make_shared<Process>(pid, name);
 
-        // --- ADD THIS TEMPORARY DEBUG PRINT ---
-        std::cout << "\n[DEBUG CLOCK] " << name << " created precisely at Cycle: " << currentCycle << "\n";
-        // --------------------------------------
+        // // --- ADD THIS TEMPORARY DEBUG PRINT ---
+        // std::cout << "\n[DEBUG CLOCK] " << name << " created precisely at Cycle: " << currentCycle << "\n";
+        // // --------------------------------------
 
         int totalIns = Config::minIns; 
         std::string message = "Hello world from " + name + "!";
@@ -177,8 +177,24 @@ void FCFSScheduler::workerLoop(int coreId) {
 void FCFSScheduler::printStatus(std::ostream& os) {
     std::lock_guard<std::mutex> lock(allProcMutex);
 
+    // 1. Calculate Core Statistics
+    int coresUsed = 0;
+    for (int i = 0; i < numCores; ++i) {
+        if (cores[i]->current != nullptr) {
+            coresUsed++;
+        }
+    }
+    int coresAvailable = numCores - coresUsed;
+
+    // Calculate utilization percentage (avoid division by zero)
+    int cpuUtilization = (numCores > 0) ? (coresUsed * 100) / numCores : 0;
+
+    os << "CPU utilization: " << cpuUtilization << "%\n";
+    os << "Cores used: " << coresUsed << "\n";
+    os << "Cores available: " << coresAvailable << "\n";
+
     os << "------------------------------------\n";
-    os << "Global Clock Cycles: " << globalCpuCycles->load() << "\n";
+    // os << "Global Clock Cycles: " << globalCpuCycles->load() << "\n";
     os << "Running processes:\n";
     for (const auto& process : allProcesses) {
         if (process->getState() == Process::RUNNING) {
