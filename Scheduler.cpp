@@ -164,6 +164,23 @@ void Scheduler::runSingleCycleStep() {
     uint64_t currentCycle = globalCpuCycles->load();
     bool isRR = (Config::scheduler == "rr");
 
+    // --- NEW: Global Sleep Cycle Management ---
+    {
+        std::lock_guard<std::mutex> lock(allProcMutex);
+        for (auto& process : allProcesses) {
+            if (process->getState() == Process::SLEEPING) {
+                // tickSleep decrements sleepTicks and returns true if remaining == 0
+                if (process->tickSleep()) { 
+                    process->setState(Process::READY);
+                    
+                    // Put it back in the ready queue to pick up where it left off
+                    std::lock_guard<std::mutex> queueLock(queueMutex);
+                    readyQueue.push(process);
+                }
+            }
+        }
+    }
+
     // A. Generation Check
     if (isGenerating.load() &&
         (currentCycle - lastGeneratedCycle.load() >= (uint64_t)Config::batchProcessFreq)) {
@@ -172,6 +189,11 @@ void Scheduler::runSingleCycleStep() {
         int pid = nextPid.fetch_add(1);
         std::string name = "p" + zeroPad(pid, 2);
         auto process = std::make_shared<Process>(pid, name);
+        // --- TEMPORARY FIXED INSTRUCTIONS FOR TESTING FCFS (NO SLEEP) ---
+        process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
+        process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
+        process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
+        process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
 
         // Randomize instruction count between min-ins and max-ins
         static std::mt19937 rng(std::random_device{}());
@@ -274,12 +296,27 @@ void Scheduler::workerLoop(int coreId) {
 
         auto process = core.current;
         if (process != nullptr) {
-            if (!process->isFinished()) {
+
+        // If the process is currently busy-waiting a delay, just burn a cycle tick
+            if (process->isBusyWaiting()) {
+                process->tickBusyWait();
+            }
+
+            else if (!process->isFinished()) {
                 process->executeCurrentCommand(coreId);
             }
+            
+            // Check if it finished OR if it just went to sleep
             if (process->isFinished()) {
                 process->finishExecution();
                 std::lock_guard<std::mutex> coreLock(core.mutex);
+                core.current      = nullptr;
+                core.quantumTicks = 0;
+            } 
+            else if (process->getState() == Process::SLEEPING) {
+                // Relinquish CPU! Clear the core slot so someone else can use it
+                std::lock_guard<std::mutex> coreLock(core.mutex);
+                process->setCoreId(-1); 
                 core.current      = nullptr;
                 core.quantumTicks = 0;
             }
@@ -304,6 +341,12 @@ std::shared_ptr<Process> Scheduler::findProcess(const std::string& name) {
 std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
     int pid = nextPid.fetch_add(1);
     auto process = std::make_shared<Process>(pid, name);
+
+    // --- TEMPORARY FIXED INSTRUCTIONS FOR TESTING FCFS (NO SLEEP) ---
+    process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
+    process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
+    process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
+    process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
 
     static std::mt19937 rng(std::random_device{}());
     std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);

@@ -96,11 +96,10 @@ int main() {
                 }
                 else {
                     auto process = scheduler->findProcess(processName);
-                    if (!process || process->getState() == Process::FINISHED) {
-                        cout << "Process " << processName << " not found.\n";
-                    }
-                    else if (!process->hasScreenSession()) {
-                        cout << "No screen exists for process " << processName << ". Use screen -s to create a process screen.\n";
+                    
+                    // STRICTION ENFORCEMENT: Block if process doesn't exist OR if it is finished
+                    if (!process || process->isFinished()) {
+                        cout << "Process " << processName << " not found.\n"; // Spec requirement print
                     }
                     else {
                         process->attachScreen();
@@ -147,44 +146,58 @@ void printHeader() {
 }
 
 void displayProcessScreen(Process& process) {
-    system("cls");
-    cout << process.getName() << " Process Screen\n";
-    cout << "Type \"process-smi\" to view logs, or \"exit\" to return to the main menu.\n";
+    // Helper function to print the layout required by the specifications
+    auto printProcessInfo = [](Process& p) {
+        system("cls"); // Clear the contents to "move" into the process screen
+        const auto logs = p.getScreenLogs();
+        
+        std::cout << "Process name: " << p.getName() << "\n";
+        std::cout << "ID: "           << p.getPID() << "\n";
+        std::cout << "Logs:\n";
+        
+        if (logs.empty()) {
+            std::cout << "(none)\n";
+        } else {
+            for (const auto& log : logs) {
+                std::cout << log << "\n";
+            }
+        }
+        
+        // Only print execution status metrics if the process isn't finished yet
+        if (!p.isFinished()) {
+            std::cout << "\nCurrent instruction line: " << p.getCurrentLine() << "\n";
+            std::cout << "Lines of code: "            << p.getTotalLines() << "\n";
+        } else {
+            // Requirement: If the process has finished, print "Finished!" right after the logs
+            std::cout << "\nFinished!\n";
+        }
+    };
+
+    // --- RULE 1: Print info IMMEDIATELY upon screen entry (-s or -r) ---
+    printProcessInfo(process);
 
     while (true) {
-        string line;
-
-        cout << "\nEnter command: ";
-        if (!getline(cin, line)) break;
+        std::string line;
+        std::cout << "\nroot:\\> "; // Match specification console prompt layout
+        if (!std::getline(std::cin, line)) break;
 
         if (line.rfind("\xEF\xBB\xBF", 0) == 0) line.erase(0, 3);
 
-        istringstream iss(line);
-        string command;
+        std::istringstream iss(line);
+        std::string command;
         iss >> command;
 
         if (command == "process-smi") {
-            const auto logs = process.getScreenLogs();
-            cout << "\nProcess name: " << process.getName() << "\n";
-            cout << "ID: " << process.getPID() << "\n";
-            cout << "Logs:\n";
-            if (logs.empty()) {
-                cout << "(none)\n";
-            } else {
-                for (const auto& log : logs) {
-                    cout << log << "\n";
-                }
-            }
-            cout << "\nCurrent instruction line: " << process.getCurrentLine() << "\n";
-            cout << "Lines of code: " << process.getTotalLines() << "\n";
+            // RULE 2: process-smi updates details dynamically based on execution steps
+            printProcessInfo(process);
         }
         else if (command == "exit") {
             process.detachScreen();
-            system("cls");
+            system("cls"); // Clear screen upon returning to main menu
             break;
         }
-        else {
-            cout << "Unknown command.\n";
+        else if (!command.empty()) {
+            std::cout << "Unknown command.\n";
         }
     }
 }
@@ -194,7 +207,8 @@ void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, Schedu
         cpuCycles->fetch_add(1);
         scheduler.runSingleCycleStep();
 
-        int delay = (Config::delayPerExec > 0) ? Config::delayPerExec : 1;
-        std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+        // Constant baseline tick delay (1ms) to prevent host CPU hogging,
+        // decoupled from the simulated parameters.
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }

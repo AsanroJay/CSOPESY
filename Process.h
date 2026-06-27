@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "SymbolTable.h"
 
 #include "ICommand.h"
 
@@ -20,6 +21,7 @@ public:
     enum ProcessState {
         READY,
         RUNNING,
+        SLEEPING,
         FINISHED
     };
 
@@ -54,6 +56,11 @@ public:
     void sleepFor(int ticks);
     bool tickSleep();
 
+    // Busy-wait support for delay-per-exec parameters
+    bool isBusyWaiting() const;
+    void startBusyWait(int cycles);
+    void tickBusyWait();
+
     // Accessors (read by the console thread for "screen -ls").
     int getPID() const;
     std::string getName() const;
@@ -68,6 +75,8 @@ public:
     bool hasScreenSession() const;
     bool isScreenAttached() const;
     std::vector<std::string> getScreenLogs() const;
+
+    
 
 private:
     int pid;
@@ -90,4 +99,8 @@ private:
     mutable std::mutex variableMutex;
     bool screenSessionExists;
     bool screenAttached;
+    SymbolTable symbolTable;
+    // Inside Process.h
+private:
+    std::atomic<int> currentBusyTicks{0}; // Tracks cycles spent busy-waiting
 };

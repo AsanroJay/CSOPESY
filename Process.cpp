@@ -82,24 +82,15 @@ void Process::setCoreId(int coreId) {
 }
 
 void Process::declareVariable(const std::string& name, uint16_t value) {
-    std::lock_guard<std::mutex> lock(variableMutex);
-    variables[name] = value;
+    symbolTable.declareVariable(name, value);
 }
 
 uint16_t Process::getVariable(const std::string& name) {
-    std::lock_guard<std::mutex> lock(variableMutex);
-    auto it = variables.find(name);
-    if (it == variables.end()) {
-        variables[name] = 0;
-        return 0;
-    }
-    return it->second;
+    return symbolTable.getVariable(name);
 }
 
 void Process::setVariable(const std::string& name, uint32_t value) {
-    uint32_t clamped = std::clamp<uint32_t>(value, 0u, std::numeric_limits<uint16_t>::max());
-    std::lock_guard<std::mutex> lock(variableMutex);
-    variables[name] = static_cast<uint16_t>(clamped);
+    symbolTable.setVariable(name, value);
 }
 
 bool Process::isSleeping() const {
@@ -176,4 +167,20 @@ bool Process::isScreenAttached() const {
 std::vector<std::string> Process::getScreenLogs() const {
     std::lock_guard<std::mutex> lock(screenMutex);
     return screenLogs;
+}
+
+// Inside Process.cpp
+bool Process::isBusyWaiting() const {
+    return currentBusyTicks.load() > 0;
+}
+
+void Process::startBusyWait(int cycles) {
+    currentBusyTicks.store(cycles);
+}
+
+void Process::tickBusyWait() {
+    int remaining = currentBusyTicks.load();
+    if (remaining > 0) {
+        currentBusyTicks.store(remaining - 1);
+    }
 }

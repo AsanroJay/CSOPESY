@@ -4,7 +4,8 @@
 #include "ICommand.h"
 #include <cstdint>
 
-// ADD and SUBTRACT instructions operate on process-local uint16 variables.
+// ADD and SUBTRACT instructions operate on 3 operands:
+// commandType (destination, left, right) -> destination = left op right
 class ArithmeticCommand : public ICommand {
 public:
     enum OperandMode {
@@ -18,6 +19,7 @@ public:
         uint16_t literalValue;
     };
 
+    // Updated constructor to explicitly separate destination from left and right operands
     ArithmeticCommand(CommandType type,
                       const std::string& destination,
                       Operand left,
