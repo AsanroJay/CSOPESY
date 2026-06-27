@@ -233,22 +233,7 @@ void Scheduler::runSingleCycleStep() {
     }
 
     // B. Dispatcher: assign ready processes to free cores
-    {
-        std::lock_guard<std::mutex> queueLock(queueMutex);
-        for (int i = 0; i < numCores && !readyQueue.empty(); ++i) {
-            CoreSlot& core = *cores[i];
-            std::unique_lock<std::mutex> coreLock(core.mutex);
-            if (core.current == nullptr) {
-                auto process = readyQueue.front();
-                readyQueue.pop();
-                process->setCoreId(i);
-                process->setState(Process::RUNNING);
-                core.current   = process;
-                core.quantumTicks  = 0;
-                core.stepCompleted = false;
-            }
-        }
-    }
+    assignReadyToFreeCores();
 
     // C. RR preemption check — before ticking, check if quantum expired
     if (isRR) {
@@ -291,6 +276,28 @@ void Scheduler::runSingleCycleStep() {
         // Increment quantum tick counter for RR
         if (isRR && core.current != nullptr) {
             core.quantumTicks++;
+        }
+    }
+
+    // F. Re-dispatch: refill cores freed this cycle (by finish, SLEEP, or RR
+    // preemption) so loaded cores stay busy at the cycle boundary where
+    // "screen -ls" samples them — otherwise utilization reads low.
+    assignReadyToFreeCores();
+}
+
+void Scheduler::assignReadyToFreeCores() {
+    std::lock_guard<std::mutex> queueLock(queueMutex);
+    for (int i = 0; i < numCores && !readyQueue.empty(); ++i) {
+        CoreSlot& core = *cores[i];
+        std::unique_lock<std::mutex> coreLock(core.mutex);
+        if (core.current == nullptr) {
+            auto process = readyQueue.front();
+            readyQueue.pop();
+            process->setCoreId(i);
+            process->setState(Process::RUNNING);
+            core.current   = process;
+            core.quantumTicks  = 0;
+            core.stepCompleted = false;
         }
     }
 }

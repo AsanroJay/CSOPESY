@@ -31,6 +31,7 @@ public:
 
 private:
     void workerLoop(int coreId);
+    void assignReadyToFreeCores();   // dispatch ready processes onto any idle cores
 
     int numCores;
 
