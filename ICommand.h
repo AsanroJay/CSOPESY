@@ -22,7 +22,9 @@ public:
     CommandType getCommandType() const { return commandType; }
 
     // Executes this instruction on the given CPU core.
-    virtual void execute(int coreId, Process& process) = 0;
+    // Returns true when the instruction is complete and the process can
+    // advance to the next top-level command.
+    virtual bool execute(int coreId, Process& process) = 0;
 
 protected:
     CommandType commandType;

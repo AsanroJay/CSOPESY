@@ -1,10 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "ICommand.h"
@@ -34,9 +36,23 @@ public:
     // Writes one print line to this process's log file. Called from PrintCommand.
     void logPrint(int coreId, const std::string& message);
 
+    // Prints the provided message to this process's attached console.
+    void printToScreen(const std::string& message);
+
     // State mutators (used by the scheduler/worker).
     void setState(ProcessState state);
     void setCoreId(int coreId);
+
+    // Variable support for process-local uint16 registers.
+    void declareVariable(const std::string& name, uint16_t value);
+    uint16_t getVariable(const std::string& name);
+    void setVariable(const std::string& name, uint32_t value);
+
+    // Sleep support for SLEEP instructions.
+    bool isSleeping() const;
+    int getSleepTicks() const;
+    void sleepFor(int ticks);
+    bool tickSleep();
 
     // Accessors (read by the console thread for "screen -ls").
     int getPID() const;
@@ -63,12 +79,15 @@ private:
     std::atomic<int> commandCounter; // next instruction index = lines executed
     std::atomic<int> coreId;         // -1 until assigned to a core
     std::atomic<ProcessState> currentState;
+    std::atomic<int> sleepTicks;
 
     std::ofstream outFile;           // per-process log; opened lazily on first print
     bool fileOpened;
 
     std::vector<std::string> screenLogs;
     mutable std::mutex screenMutex;
+    std::unordered_map<std::string, uint16_t> variables;
+    mutable std::mutex variableMutex;
     bool screenSessionExists;
     bool screenAttached;
 };

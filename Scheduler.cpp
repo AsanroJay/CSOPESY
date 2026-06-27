@@ -4,11 +4,112 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <random>
 
+#include "ArithmeticCommand.h"
 #include "Config.h"
+#include "DeclareCommand.h"
+#include "ForCommand.h"
 #include "PrintCommand.h"
+#include "SleepCommand.h"
 #include "Utils.h"
+
+static std::mt19937& getRng() {
+    static std::mt19937 rng(std::random_device{}());
+    return rng;
+}
+
+static int randomInt(int minValue, int maxValue) {
+    return std::uniform_int_distribution<int>(minValue, maxValue)(getRng());
+}
+
+static bool randomChance(int percent) {
+    return randomInt(1, 100) <= percent;
+}
+
+static std::string chooseVarName(const std::vector<std::string>& names) {
+    return names[randomInt(0, static_cast<int>(names.size()) - 1)];
+}
+
+static ArithmeticCommand::Operand makeRandomOperand(const std::vector<std::string>& variableNames) {
+    if (!variableNames.empty() && randomChance(60)) {
+        return {ArithmeticCommand::VARIABLE, chooseVarName(variableNames), 0};
+    }
+    return {ArithmeticCommand::LITERAL, std::string(), static_cast<uint16_t>(randomInt(0, 100))};
+}
+
+static std::shared_ptr<ICommand> makeRandomInstruction(const std::string& processName,
+                                                      const std::vector<std::string>& variableNames,
+                                                      int depth);
+
+static std::vector<std::shared_ptr<ICommand>> makeRandomCommandBlock(const std::string& processName,
+                                                                     const std::vector<std::string>& variableNames,
+                                                                     int depth,
+                                                                     int count) {
+    std::vector<std::shared_ptr<ICommand>> commands;
+    commands.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        commands.push_back(makeRandomInstruction(processName, variableNames, depth));
+    }
+    return commands;
+}
+
+static std::shared_ptr<ICommand> makeRandomInstruction(const std::string& processName,
+                                                      const std::vector<std::string>& variableNames,
+                                                      int depth) {
+    constexpr int maxForNestingDepth = 3;
+
+    if (depth >= maxForNestingDepth) {
+        int choice = randomInt(1, 90);
+        if (choice <= 30) {
+            return std::make_shared<PrintCommand>("Hello world from " + processName + "!");
+        }
+        if (choice <= 45) {
+            return std::make_shared<DeclareCommand>(chooseVarName(variableNames), static_cast<uint16_t>(randomInt(0, 65535)));
+        }
+        if (choice <= 65) {
+            return std::make_shared<ArithmeticCommand>(ICommand::ADD,
+                                                       chooseVarName(variableNames),
+                                                       makeRandomOperand(variableNames),
+                                                       makeRandomOperand(variableNames));
+        }
+        if (choice <= 80) {
+            return std::make_shared<ArithmeticCommand>(ICommand::SUBTRACT,
+                                                       chooseVarName(variableNames),
+                                                       makeRandomOperand(variableNames),
+                                                       makeRandomOperand(variableNames));
+        }
+        return std::make_shared<SleepCommand>(randomInt(1, 5));
+    }
+
+    int choice = randomInt(1, depth >= 2 ? 85 : 100);
+    if (choice <= 30) {
+        return std::make_shared<PrintCommand>("Hello world from " + processName + "!");
+    }
+    if (choice <= 45) {
+        return std::make_shared<DeclareCommand>(chooseVarName(variableNames), static_cast<uint16_t>(randomInt(0, 65535)));
+    }
+    if (choice <= 65) {
+        return std::make_shared<ArithmeticCommand>(ICommand::ADD,
+                                                   chooseVarName(variableNames),
+                                                   makeRandomOperand(variableNames),
+                                                   makeRandomOperand(variableNames));
+    }
+    if (choice <= 80) {
+        return std::make_shared<ArithmeticCommand>(ICommand::SUBTRACT,
+                                                   chooseVarName(variableNames),
+                                                   makeRandomOperand(variableNames),
+                                                   makeRandomOperand(variableNames));
+    }
+    if (choice <= 90) {
+        return std::make_shared<SleepCommand>(randomInt(1, 5));
+    }
+
+    int innerCount = randomInt(1, 3);
+    int repeats = randomInt(2, 5);
+    return std::make_shared<ForCommand>(makeRandomCommandBlock(processName, variableNames, depth + 1, innerCount), repeats);
+}
 
 Scheduler::Scheduler(int numCores, std::shared_ptr<std::atomic<uint64_t>> externalClock)
     : numCores(numCores),
@@ -77,9 +178,13 @@ void Scheduler::runSingleCycleStep() {
         std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
         int totalIns = dist(rng);
 
-        std::string message = "Hello world from " + name + "!";
-        for (int j = 0; j < totalIns; ++j) {
-            process->addCommand(std::make_shared<PrintCommand>(message));
+        // Build a list of candidate variable names for randomized instructions
+        std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
+
+        // Populate the process with a randomized block of instructions
+        auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
+        for (auto& cmd : commands) {
+            process->addCommand(cmd);
         }
 
         {

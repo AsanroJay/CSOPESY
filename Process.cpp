@@ -1,5 +1,7 @@
 #include "Process.h"
 
+#include <iostream>
+
 #include "Config.h"
 #include "Utils.h"
 
@@ -10,6 +12,7 @@ Process::Process(int pid, const std::string& name)
       commandCounter(0),
       coreId(-1),
       currentState(READY),
+      sleepTicks(0),
       fileOpened(false),
       screenSessionExists(false),
       screenAttached(false) {}
@@ -23,8 +26,10 @@ void Process::executeCurrentCommand(int coreId) {
         return;
     }
     int index = commandCounter.load();
-    commandList[index]->execute(coreId, *this);
-    commandCounter.fetch_add(1);
+    bool finished = commandList[index]->execute(coreId, *this);
+    if (finished) {
+        commandCounter.fetch_add(1);
+    }
 }
 
 void Process::finishExecution() {
@@ -46,16 +51,16 @@ bool Process::isFinished() const {
 }
 
 void Process::logPrint(int coreId, const std::string& message) {
-    if (!Config::WRITE_PRINT_FILES) {
-        return;
-    }
-
     std::string timestamp = currentTimestamp();
     std::string entry = "(" + timestamp + ") Core:" + std::to_string(coreId) + " \"" + message + "\"";
 
     {
         std::lock_guard<std::mutex> lock(screenMutex);
         screenLogs.push_back(entry);
+    }
+
+    if (!Config::WRITE_PRINT_FILES) {
+        return;
     }
 
     if (!fileOpened) {
@@ -74,6 +79,49 @@ void Process::setState(ProcessState state) {
 
 void Process::setCoreId(int coreId) {
     this->coreId.store(coreId);
+}
+
+void Process::declareVariable(const std::string& name, uint16_t value) {
+    std::lock_guard<std::mutex> lock(variableMutex);
+    variables[name] = value;
+}
+
+uint16_t Process::getVariable(const std::string& name) {
+    std::lock_guard<std::mutex> lock(variableMutex);
+    auto it = variables.find(name);
+    if (it == variables.end()) {
+        variables[name] = 0;
+        return 0;
+    }
+    return it->second;
+}
+
+void Process::setVariable(const std::string& name, uint32_t value) {
+    uint32_t clamped = std::clamp<uint32_t>(value, 0u, std::numeric_limits<uint16_t>::max());
+    std::lock_guard<std::mutex> lock(variableMutex);
+    variables[name] = static_cast<uint16_t>(clamped);
+}
+
+bool Process::isSleeping() const {
+    return sleepTicks.load() > 0;
+}
+
+int Process::getSleepTicks() const {
+    return sleepTicks.load();
+}
+
+void Process::sleepFor(int ticks) {
+    sleepTicks.store(ticks);
+}
+
+bool Process::tickSleep() {
+    int remaining = sleepTicks.load();
+    if (remaining <= 0) {
+        return true;
+    }
+    remaining = std::max(0, remaining - 1);
+    sleepTicks.store(remaining);
+    return remaining == 0;
 }
 
 int Process::getPID() const {

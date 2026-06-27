@@ -8,10 +8,12 @@
 // core-tagged line to the owning process's log file.
 class PrintCommand : public ICommand {
 public:
-    explicit PrintCommand(const std::string& toPrint);
+    explicit PrintCommand(const std::string& messagePrefix,
+                          const std::string& variableName = "");
 
-    void execute(int coreId, Process& process) override;
+    bool execute(int coreId, Process& process) override;
 
 private:
-    std::string toPrint;
+    std::string messagePrefix;
+    std::string variableName;
 };
