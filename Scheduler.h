@@ -27,6 +27,7 @@ public:
 
     // For screen -s / -r lookups
     std::shared_ptr<Process> findProcess(const std::string& name);
+    std::shared_ptr<Process> createProcess(const std::string& name);
 
 private:
     void workerLoop(int coreId);

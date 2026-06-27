@@ -80,28 +80,29 @@ int main() {
             else if (argument == "-s") {
                 if (processName.empty()) {
                     cout << "Usage: screen -s <name>\n";
-                } else {
-                    auto process = scheduler->findProcess(processName);
-                    if (!process || process->getState() == Process::FINISHED) {
-                        cout << "Process " << processName << " not found.\n";
-                    } else if (process->hasScreenSession()) {
-                        cout << "A screen already exists for process '" << processName << "'. Use screen -r to reattach a process screen.\n";
-                    } else {
-                        process->attachScreen();
-                        displayProcessScreen(*process);
-                    }
+                }
+                else if (scheduler->findProcess(processName)) {
+                    cout << "Process " << processName << " already exists.\n";
+                }
+                else {
+                    auto process = scheduler->createProcess(processName);
+                    process->attachScreen();
+                    displayProcessScreen(*process);
                 }
             }
             else if (argument == "-r") {
                 if (processName.empty()) {
                     cout << "Usage: screen -r <name>\n";
-                } else {
+                }
+                else {
                     auto process = scheduler->findProcess(processName);
                     if (!process || process->getState() == Process::FINISHED) {
                         cout << "Process " << processName << " not found.\n";
-                    } else if (!process->hasScreenSession()) {
+                    }
+                    else if (!process->hasScreenSession()) {
                         cout << "No screen exists for process " << processName << ". Use screen -s to create a process screen.\n";
-                    } else {
+                    }
+                    else {
                         process->attachScreen();
                         displayProcessScreen(*process);
                     }

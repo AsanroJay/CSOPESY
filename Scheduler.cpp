@@ -301,6 +301,32 @@ std::shared_ptr<Process> Scheduler::findProcess(const std::string& name) {
     return nullptr;
 }
 
+std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
+    int pid = nextPid.fetch_add(1);
+    auto process = std::make_shared<Process>(pid, name);
+
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
+    int totalIns = dist(rng);
+
+    std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
+    auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
+    for (auto& cmd : commands) {
+        process->addCommand(cmd);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(allProcMutex);
+        allProcesses.push_back(process);
+    }
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        readyQueue.push(process);
+    }
+
+    return process;
+}
+
 void Scheduler::printStatus(std::ostream& os) {
     std::lock_guard<std::mutex> lock(allProcMutex);
 
