@@ -57,8 +57,8 @@ public:
     bool tickSleep();
 
     // Busy-wait support for delay-per-exec parameters
-    bool isBusyWaiting() const;
-    void startBusyWait(int cycles);
+    bool isBusyWaiting(uint64_t currentGlobalClock) const;
+    void startBusyWait(uint64_t currentGlobalClock, int delayCycles);
     void tickBusyWait();
 
     // Accessors (read by the console thread for "screen -ls").
@@ -101,6 +101,5 @@ private:
     bool screenAttached;
     SymbolTable symbolTable;
     // Inside Process.h
-private:
-    std::atomic<int> currentBusyTicks{0}; // Tracks cycles spent busy-waiting
+    std::atomic<uint64_t> busyWaitDeadline{0}; // Tracks cycles spent busy-waiting
 };

@@ -169,18 +169,18 @@ std::vector<std::string> Process::getScreenLogs() const {
     return screenLogs;
 }
 
-// Inside Process.cpp
-bool Process::isBusyWaiting() const {
-    return currentBusyTicks.load() > 0;
+// Pass the current global clock directly into this function to check the deadline
+bool Process::isBusyWaiting(uint64_t currentGlobalClock) const {
+    // If current clock is less than our target deadline, we must continue waiting!
+    return currentGlobalClock < busyWaitDeadline.load();
 }
 
-void Process::startBusyWait(int cycles) {
-    currentBusyTicks.store(cycles);
+// Sets the deadline: (Current Global Clock + Config Delay)
+void Process::startBusyWait(uint64_t currentGlobalClock, int delayCycles) {
+    busyWaitDeadline.store(currentGlobalClock + static_cast<uint64_t>(delayCycles));
 }
 
+// This function is no longer needed since the global clock advances automatically!
 void Process::tickBusyWait() {
-    int remaining = currentBusyTicks.load();
-    if (remaining > 0) {
-        currentBusyTicks.store(remaining - 1);
-    }
+    // Left empty or can be safely deleted from your file
 }

@@ -189,11 +189,21 @@ void Scheduler::runSingleCycleStep() {
         int pid = nextPid.fetch_add(1);
         std::string name = "p" + zeroPad(pid, 2);
         auto process = std::make_shared<Process>(pid, name);
-        // --- TEMPORARY FIXED INSTRUCTIONS FOR TESTING FCFS (NO SLEEP) ---
-        process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
-        process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
-        process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
-        process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
+        //---------------------------------------------------------------------------
+        // TESTER
+
+        // for (int i = 0; i < 500; ++i) {
+        //     process->addCommand(std::make_shared<PrintCommand>("Step " + std::to_string(i + 1) + " from " + name + "!"));
+        // }
+        // process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
+        // process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
+        // process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
+        // process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
+
+        //------------------------------------------------------------------------------------------------
+
+
+        // // RANDOMIZED INSTRUCTIONS
 
         // Randomize instruction count between min-ins and max-ins
         static std::mt19937 rng(std::random_device{}());
@@ -208,6 +218,8 @@ void Scheduler::runSingleCycleStep() {
         for (auto& cmd : commands) {
             process->addCommand(cmd);
         }
+
+        //--------------------------------------------------------------------------------------------------
 
         {
             std::lock_guard<std::mutex> lock(allProcMutex);
@@ -285,6 +297,7 @@ void Scheduler::runSingleCycleStep() {
 void Scheduler::workerLoop(int coreId) {
     CoreSlot& core = *cores[coreId];
     while (!shuttingDown.load()) {
+        // 1. Wait for the main scheduler thread to signal a clock cycle tick
         {
             std::unique_lock<std::mutex> coreLock(core.mutex);
             core.cv.wait(coreLock, [&] {
@@ -296,25 +309,35 @@ void Scheduler::workerLoop(int coreId) {
 
         auto process = core.current;
         if (process != nullptr) {
+            // 2. Fetch the current global clock cycle value safely
+            uint64_t currentGlobalClock = globalCpuCycles->load();
 
-        // If the process is currently busy-waiting a delay, just burn a cycle tick
-            if (process->isBusyWaiting()) {
-                process->tickBusyWait();
+            // 3. Deadline Check: If the process is still waiting out its instruction delay, skip execution
+            if (process->isBusyWaiting(currentGlobalClock)) {
+                // Do nothing this cycle tick! Just hold the core slot and wait for time to advance
             }
-
+            // 4. Deadline Passed: Execute the next instruction line if it's not finished
             else if (!process->isFinished()) {
                 process->executeCurrentCommand(coreId);
+                
+                // 5. If a delay modifier is configured, lock in the new deadline right now
+                if (Config::delayPerExec > 0 && !process->isFinished()) {
+                    process->startBusyWait(currentGlobalClock, Config::delayPerExec);
+                }
             }
             
-            // Check if it finished OR if it just went to sleep
+            // 6. Post-execution Lifecycle Clean up
             if (process->isFinished()) {
+                // Wrap up file handles and update state to FINISHED
                 process->finishExecution();
+                
+                // Relinquish the core slot instantly so the dispatcher can cycle in a fresh process
                 std::lock_guard<std::mutex> coreLock(core.mutex);
                 core.current      = nullptr;
                 core.quantumTicks = 0;
             } 
             else if (process->getState() == Process::SLEEPING) {
-                // Relinquish CPU! Clear the core slot so someone else can use it
+                // Relinquish the core slot immediately if the command forced a process sleep
                 std::lock_guard<std::mutex> coreLock(core.mutex);
                 process->setCoreId(-1); 
                 core.current      = nullptr;
@@ -322,6 +345,7 @@ void Scheduler::workerLoop(int coreId) {
             }
         }
 
+        // 7. Core Thread Barrier Synchronization Sync-Back
         {
             std::lock_guard<std::mutex> coreLock(core.mutex);
             core.stepCompleted = true;
@@ -341,12 +365,15 @@ std::shared_ptr<Process> Scheduler::findProcess(const std::string& name) {
 std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
     int pid = nextPid.fetch_add(1);
     auto process = std::make_shared<Process>(pid, name);
+    // -----------------------------------------------------------------------------------
+    // TESTER
+    // process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
+    // process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
+    // process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
+    // process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
+    //------------------------------------------------------------------------------------
 
-    // --- TEMPORARY FIXED INSTRUCTIONS FOR TESTING FCFS (NO SLEEP) ---
-    process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
-    process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
-    process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
-    process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
+    // RANDOMIZED INSTRUCTIONS
 
     static std::mt19937 rng(std::random_device{}());
     std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
@@ -356,6 +383,17 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
     auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
     for (auto& cmd : commands) {
         process->addCommand(cmd);
+    }
+
+    //--------------------------------------------------------------------------------------------------
+
+    {
+        std::lock_guard<std::mutex> lock(allProcMutex);
+        allProcesses.push_back(process);
+    }
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        readyQueue.push(process);
     }
 
     {
