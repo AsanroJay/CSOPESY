@@ -67,3 +67,10 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Emulator runtime output: per-process logs (p01.txt, ex1.txt, ...) and the
+# report-util output (csopesy-log.txt). Ignore all .txt EXCEPT the committed
+# input config and the submission README.
+*.txt
+!config.txt
+!README.txt

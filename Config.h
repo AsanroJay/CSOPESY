@@ -13,6 +13,10 @@ namespace Config {
     inline int         minIns            = 1000;
     inline int         maxIns            = 2000;
     inline int         delayPerExec      = 0;
+    // Instruction generation mode: "random" (default) or "alternating".
+    // "alternating" makes every process start with x=0 and run a strict
+    // PRINT("Value from: " + x) / ADD(x, x, [1-10]) sequence (quiz TC4).
+    inline std::string instructionMode   = "random";
 
     // Legacy aliases so existing Scheduler/Process code compiles unchanged
     inline int& NUM_CORES             = numCpu;

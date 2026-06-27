@@ -29,6 +29,12 @@ void Process::executeCurrentCommand(int coreId) {
     bool finished = commandList[index]->execute(coreId, *this);
     if (finished) {
         commandCounter.fetch_add(1);
+        // delay-per-exec: after completing an instruction, busy-wait the
+        // configured number of CPU cycles before the next one. The process
+        // stays on its core during this wait (busy-waiting scheme per spec).
+        if (Config::delayPerExec > 0) {
+            startBusyWait(Config::delayPerExec);
+        }
     }
 }
 

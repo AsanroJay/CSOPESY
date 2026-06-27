@@ -10,12 +10,19 @@
                 "-std=c++20",
                 "-pthread",
                 "${fileDirname}\\emulator.cpp",
+                "${fileDirname}\\Config.cpp",
                 "${fileDirname}\\Process.cpp",
-                "${fileDirname}\\PrintCommand.cpp",
                 "${fileDirname}\\Scheduler.cpp",
                 "${fileDirname}\\Utils.cpp",
+                "${fileDirname}\\SymbolTable.cpp",
+                "${fileDirname}\\PrintCommand.cpp",
+                "${fileDirname}\\DeclareCommand.cpp",
+                "${fileDirname}\\ArithmeticCommand.cpp",
+                "${fileDirname}\\SleepCommand.cpp",
+                "${fileDirname}\\ForCommand.cpp",
                 "-o",
-                "${fileDirname}\\emulator.exe"
+                "${fileDirname}\\emulator.exe",
+                "-lwinmm"
             ],
             "options": {
                 "cwd": "${fileDirname}"

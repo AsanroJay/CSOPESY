@@ -6,8 +6,15 @@
 #include <memory>
 #include <thread>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX               // keep windows.h from clobbering std::min/std::max
+#endif
+#include <windows.h>           // timeBeginPeriod/timeEndPeriod (links against winmm)
+#endif
+
 #include "Config.h"
-#include "Scheduler.h"  
+#include "Scheduler.h"
 
 using namespace std;
 
@@ -16,6 +23,12 @@ void displayProcessScreen(Process& process);
 void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles,Scheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning);
 
 int main() {
+#ifdef _WIN32
+    // Raise the system timer resolution to 1ms so the engine's per-cycle
+    // sleep_for(1ms) isn't rounded up to the default ~15.6ms granularity.
+    timeBeginPeriod(1);
+#endif
+
     printHeader();
 
     auto cpuCycles     = std::make_shared<std::atomic<uint64_t>>(0);
@@ -62,10 +75,11 @@ int main() {
                 cout << "  Min instructions : " << Config::minIns << "\n";
                 cout << "  Max instructions : " << Config::maxIns << "\n";
                 cout << "  Delay per exec   : " << Config::delayPerExec << "\n";
+                cout << "  Instruction mode : " << Config::instructionMode << "\n";
                 cout << "Type \"scheduler-start\" to begin generating processes.\n";
             }
         }
-        else if (command == "scheduler-start") {
+        else if (command == "scheduler-start" || command == "scheduler-test") {
             scheduler->startGeneration();
             cout << "Process generation started. Every " << Config::batchProcessFreq << " CPU cycle(s).\n";
         }
@@ -130,6 +144,9 @@ int main() {
         }
     }
 
+#ifdef _WIN32
+    timeEndPeriod(1);
+#endif
     return 0;
 }
 

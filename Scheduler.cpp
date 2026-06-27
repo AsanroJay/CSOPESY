@@ -111,6 +111,35 @@ static std::shared_ptr<ICommand> makeRandomInstruction(const std::string& proces
     return std::make_shared<ForCommand>(makeRandomCommandBlock(processName, variableNames, depth + 1, innerCount), repeats);
 }
 
+// Fills a process with its instruction program. In the default "random" mode
+// this is a randomized block of mixed instruction types. In "alternating" mode
+// (quiz TC4) the process starts with x=0 and runs a strict, repeating sequence
+// of PRINT("Value from: " + x) and ADD(x, x, [1-10]).
+static void buildProgram(const std::shared_ptr<Process>& process, const std::string& name) {
+    int totalIns = randomInt(Config::minIns, Config::maxIns);
+
+    if (Config::instructionMode == "alternating") {
+        process->declareVariable("x", 0);
+        for (int i = 0; i < totalIns; ++i) {
+            if (i % 2 == 0) {
+                process->addCommand(std::make_shared<PrintCommand>("Value from: ", "x"));
+            } else {
+                ArithmeticCommand::Operand left{ArithmeticCommand::VARIABLE, "x", 0};
+                ArithmeticCommand::Operand right{ArithmeticCommand::LITERAL, std::string(),
+                                                 static_cast<uint16_t>(randomInt(1, 10))};
+                process->addCommand(std::make_shared<ArithmeticCommand>(ICommand::ADD, "x", left, right));
+            }
+        }
+        return;
+    }
+
+    std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
+    auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
+    for (auto& cmd : commands) {
+        process->addCommand(cmd);
+    }
+}
+
 Scheduler::Scheduler(int numCores, std::shared_ptr<std::atomic<uint64_t>> externalClock)
     : numCores(numCores),
       shuttingDown(false),
@@ -189,25 +218,9 @@ void Scheduler::runSingleCycleStep() {
         int pid = nextPid.fetch_add(1);
         std::string name = "p" + zeroPad(pid, 2);
         auto process = std::make_shared<Process>(pid, name);
-        // --- TEMPORARY FIXED INSTRUCTIONS FOR TESTING FCFS (NO SLEEP) ---
-        process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
-        process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
-        process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
-        process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
 
-        // Randomize instruction count between min-ins and max-ins
-        static std::mt19937 rng(std::random_device{}());
-        std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
-        int totalIns = dist(rng);
-
-        // Build a list of candidate variable names for randomized instructions
-        std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
-
-        // Populate the process with a randomized block of instructions
-        auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
-        for (auto& cmd : commands) {
-            process->addCommand(cmd);
-        }
+        // Populate the process with its instruction program (see buildProgram).
+        buildProgram(process, name);
 
         {
             std::lock_guard<std::mutex> lock(allProcMutex);
@@ -342,21 +355,8 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
     int pid = nextPid.fetch_add(1);
     auto process = std::make_shared<Process>(pid, name);
 
-    // --- TEMPORARY FIXED INSTRUCTIONS FOR TESTING FCFS (NO SLEEP) ---
-    process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
-    process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
-    process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
-    process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
-
-    static std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
-    int totalIns = dist(rng);
-
-    std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
-    auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
-    for (auto& cmd : commands) {
-        process->addCommand(cmd);
-    }
+    // Populate the process with its instruction program (see buildProgram).
+    buildProgram(process, name);
 
     {
         std::lock_guard<std::mutex> lock(allProcMutex);
@@ -375,6 +375,9 @@ void Scheduler::printStatus(std::ostream& os) {
 
     int coresUsed = 0;
     for (int i = 0; i < numCores; ++i) {
+        // Lock the core slot: worker/dispatcher threads mutate `current`
+        // (a shared_ptr) concurrently, so an unsynchronized read is a data race.
+        std::lock_guard<std::mutex> coreLock(cores[i]->mutex);
         if (cores[i]->current != nullptr) coresUsed++;
     }
     int coresAvailable  = numCores - coresUsed;
