@@ -14,6 +14,11 @@ namespace Config {
     inline int         maxIns            = 2000;
     inline int         delayPerExec      = 0;
 
+    // Memory manager parameters (first-fit flat allocator).
+    inline int         maxOverallMem     = 16384;  // total bytes of main memory
+    inline int         memPerFrame       = 16;     // bytes per frame
+    inline int         memPerProc        = 4096;   // fixed bytes each process needs
+
     // Legacy aliases so existing Scheduler/Process code compiles unchanged
     inline int& NUM_CORES             = numCpu;
     inline int& PRINTS_PER_PROCESS    = maxIns;   // temporary; replace later

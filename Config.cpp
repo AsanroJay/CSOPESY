@@ -39,6 +39,12 @@ bool Config::loadFromFile(const std::string& path) {
             iss >> Config::maxIns;
         } else if (key == "delay-per-exec") {
             iss >> Config::delayPerExec;
+        } else if (key == "max-overall-mem") {
+            iss >> Config::maxOverallMem;
+        } else if (key == "mem-per-frame") {
+            iss >> Config::memPerFrame;
+        } else if (key == "mem-per-proc") {
+            iss >> Config::memPerProc;
         } else {
             std::cerr << "Warning: unknown config key \"" << key << "\" (ignored).\n";
         }

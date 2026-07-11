@@ -116,7 +116,8 @@ Scheduler::Scheduler(int numCores, std::shared_ptr<std::atomic<uint64_t>> extern
       shuttingDown(false),
       isGenerating(false),
       nextPid(1),
-      globalCpuCycles(externalClock) {
+      globalCpuCycles(externalClock),
+      memory(Config::maxOverallMem, Config::memPerFrame, Config::memPerProc) {
     for (int i = 0; i < numCores; ++i) {
         cores.push_back(std::make_unique<CoreSlot>());
     }
@@ -136,6 +137,12 @@ void Scheduler::startGeneration() {
     if (!isGenerating.load()) {
         lastGeneratedCycle.store(globalCpuCycles->load());
         isGenerating.store(true);
+    }
+    // Begin emitting periodic memory snapshots (persists after scheduler-stop
+    // so we keep capturing memory while the remaining processes drain).
+    if (!snapshotsEnabled.load()) {
+        lastSnapshotCycle.store(globalCpuCycles->load());
+        snapshotsEnabled.store(true);
     }
 }
 
@@ -231,20 +238,40 @@ void Scheduler::runSingleCycleStep() {
         }
     }
 
-    // B. Dispatcher: assign ready processes to free cores
+    // B. Dispatcher: assign ready processes to free cores.
+    //
+    // A process must hold memory before it can run. If it isn't resident yet we
+    // attempt a first-fit allocation; when memory is full the process reverts to
+    // the TAIL of the ready queue (no backing store) and the core is left idle
+    // for this cycle. We bound the retries per core to the queue length so a
+    // fully-occupied memory doesn't spin.
     {
         std::lock_guard<std::mutex> queueLock(queueMutex);
-        for (int i = 0; i < numCores && !readyQueue.empty(); ++i) {
+        for (int i = 0; i < numCores; ++i) {
             CoreSlot& core = *cores[i];
             std::unique_lock<std::mutex> coreLock(core.mutex);
-            if (core.current == nullptr) {
+            if (core.current != nullptr) continue;
+
+            int attempts = static_cast<int>(readyQueue.size());
+            while (attempts-- > 0 && !readyQueue.empty()) {
                 auto process = readyQueue.front();
                 readyQueue.pop();
+
+                if (!memory.isAllocated(process->getPID())) {
+                    int base = memory.allocate(process->getPID(), process->getName());
+                    if (base < 0) {
+                        // Memory full: send back to the rear of the ready queue.
+                        readyQueue.push(process);
+                        continue;
+                    }
+                }
+
                 process->setCoreId(i);
                 process->setState(Process::RUNNING);
-                core.current   = process;
+                core.current       = process;
                 core.quantumTicks  = 0;
                 core.stepCompleted = false;
+                break;
             }
         }
     }
@@ -292,6 +319,23 @@ void Scheduler::runSingleCycleStep() {
             core.quantumTicks++;
         }
     }
+
+    // F. Memory snapshot: dump the memory map once per quantum-cycles.
+    maybeWriteMemorySnapshot(currentCycle);
+}
+
+void Scheduler::maybeWriteMemorySnapshot(uint64_t currentCycle) {
+    if (!snapshotsEnabled.load()) return;
+
+    int quantum = Config::quantumCycles > 0 ? Config::quantumCycles : 1;
+    if (currentCycle - lastSnapshotCycle.load() < static_cast<uint64_t>(quantum)) {
+        return;
+    }
+    lastSnapshotCycle.store(currentCycle);
+
+    uint64_t qq = quantumCounter.fetch_add(1);
+    std::string path = "memory_stamp_" + zeroPad(static_cast<int>(qq), 2) + ".txt";
+    memory.writeSnapshot(path);
 }
 
 void Scheduler::workerLoop(int coreId) {
@@ -330,12 +374,16 @@ void Scheduler::workerLoop(int coreId) {
             if (process->isFinished()) {
                 // Wrap up file handles and update state to FINISHED
                 process->finishExecution();
-                
+
+                // Release its memory back to the allocator (only finished
+                // processes free memory; preempted ones stay resident).
+                memory.deallocate(process->getPID());
+
                 // Relinquish the core slot instantly so the dispatcher can cycle in a fresh process
                 std::lock_guard<std::mutex> coreLock(core.mutex);
                 core.current      = nullptr;
                 core.quantumTicks = 0;
-            } 
+            }
             else if (process->getState() == Process::SLEEPING) {
                 // Relinquish the core slot immediately if the command forced a process sleep
                 std::lock_guard<std::mutex> coreLock(core.mutex);
@@ -386,15 +434,6 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
     }
 
     //--------------------------------------------------------------------------------------------------
-
-    {
-        std::lock_guard<std::mutex> lock(allProcMutex);
-        allProcesses.push_back(process);
-    }
-    {
-        std::lock_guard<std::mutex> lock(queueMutex);
-        readyQueue.push(process);
-    }
 
     {
         std::lock_guard<std::mutex> lock(allProcMutex);

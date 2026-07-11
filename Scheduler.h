@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 
+#include "MemoryManager.h"
 #include "Process.h"
 
 class Scheduler {
@@ -58,4 +59,15 @@ private:
     std::atomic<uint64_t> lastGeneratedCycle{0};
 
     std::shared_ptr<std::atomic<uint64_t>> globalCpuCycles;
+
+    // First-fit memory allocator shared by the dispatcher (allocate) and the
+    // CPU workers (free on finish). Internally thread-safe.
+    MemoryManager memory;
+
+    // Memory-snapshot bookkeeping. Snapshots begin once the scheduler starts
+    // generating processes; one file is emitted every `quantum-cycles`.
+    std::atomic<bool>     snapshotsEnabled{false};
+    std::atomic<uint64_t> quantumCounter{0};
+    std::atomic<uint64_t> lastSnapshotCycle{0};
+    void maybeWriteMemorySnapshot(uint64_t currentCycle);
 };
