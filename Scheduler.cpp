@@ -14,6 +14,7 @@
 #include "PrintCommand.h"
 #include "SleepCommand.h"
 #include "Utils.h"
+#include <filesystem>
 
 static std::mt19937& getRng() {
     static std::mt19937 rng(std::random_device{}());
@@ -343,8 +344,9 @@ void Scheduler::maybeWriteMemorySnapshot(uint64_t currentCycle) {
     }
     lastSnapshotCycle.store(currentCycle);
 
+    std::filesystem::create_directories("memory_snapshots");
     uint64_t qq = quantumCounter.fetch_add(1);
-    std::string path = "memory_stamp_" + zeroPad(static_cast<int>(qq), 2) + ".txt";
+    std::string path = "memory_snapshots/memory_stamp_" + zeroPad(static_cast<int>(qq), 2) + ".txt";
     memory.writeSnapshot(path);
 }
 
@@ -562,8 +564,9 @@ std::vector<std::shared_ptr<Process>> Scheduler::getRunningProcesses() {
     std::lock_guard<std::mutex> lock(allProcMutex);
     std::vector<std::shared_ptr<Process>> running;
     for (const auto& p : allProcesses) {
-        if (p->getState() == Process::RUNNING) {
-            running.push_back(p); // Push the pointer, no asterisk
+        // Capture both running and ready processes so they show up in process-smi
+        if (p->getState() == Process::RUNNING || p->getState() == Process::READY) {
+            running.push_back(p);
         }
     }
     return running;

@@ -5,6 +5,8 @@
 #include "Config.h"
 #include "Utils.h"
 
+#include <filesystem>
+
 Process::Process(int pid, const std::string& name)
     : pid(pid),
       name(name),
@@ -64,7 +66,9 @@ void Process::logPrint(int coreId, const std::string& message) {
     }
 
     if (!fileOpened) {
-        outFile.open(name + ".txt");
+        std::filesystem::create_directories("process_logs");
+        std::string path = "process_logs/" + name + ".txt";
+        outFile.open(path);
         outFile << "Process name: " << name << "\n";
         outFile << "Logs:\n\n";
         fileOpened = true;
