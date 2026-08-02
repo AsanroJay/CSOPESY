@@ -71,7 +71,7 @@ int main() {
         }
         else if (command == "scheduler-start") {
             scheduler->startGeneration();
-            cout << "Type 'scheduler-stop' to stop process scheduling";
+            cout << "Type 'scheduler-stop' to stop process scheduling.\n";
             cout << "Process generation started. Every " << Config::batchProcessFreq << " CPU cycle(s).\n";
         }
         else if (command == "scheduler-stop") {
