@@ -67,3 +67,7 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+#memory stamps and process texts
+memory_stamp_*.txt
+p*.txt
