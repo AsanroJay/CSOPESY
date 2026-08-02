@@ -16,6 +16,10 @@ public:
     virtual void deallocate(void* ptr) = 0;
     virtual String visualizeMemory() = 0;
 
+    // TWO GETTERS for new stats:
+    virtual size_t getMaximumSize() const { return maximumSize; }
+    virtual size_t getCurrentAllocatedSize() const { return currentAllocatedSize; }
+
 protected:
     MemoryAllocatorType memoryAllocatorType;
     struct MemoryBlock {

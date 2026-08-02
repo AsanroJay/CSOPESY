@@ -305,7 +305,12 @@ void Scheduler::runSingleCycleStep() {
         core.cv.notify_one();
     }
 
+   // ... inside Scheduler::runSingleCycleStep() ...
+
     // E. Barrier Sync
+    int activeCoresThisTick = 0; // NEW: Track active cores
+    int idleCoresThisTick = 0;   // NEW: Track idle cores
+
     for (int i = 0; i < numCores; ++i) {
         CoreSlot& core = *cores[i];
         std::unique_lock<std::mutex> coreLock(core.mutex);
@@ -314,11 +319,21 @@ void Scheduler::runSingleCycleStep() {
                 return core.stepCompleted || shuttingDown.load();
             });
         }
-        // Increment quantum tick counter for RR
-        if (isRR && core.current != nullptr) {
-            core.quantumTicks++;
+        
+        // NEW: Tally core activity for this cycle
+        if (core.current != nullptr) {
+            activeCoresThisTick++;
+            // Increment quantum tick counter for RR
+            if (isRR) core.quantumTicks++;
+        } else {
+            idleCoresThisTick++;
         }
     }
+
+    // NEW: Safely add to our atomic counters
+    activeTicks.fetch_add(activeCoresThisTick);
+    idleTicks.fetch_add(idleCoresThisTick);
+
 
     // F. Memory snapshot: dump the memory map once per quantum-cycles.
     maybeWriteMemorySnapshot(currentCycle);
@@ -410,19 +425,14 @@ std::shared_ptr<Process> Scheduler::findProcess(const std::string& name) {
     return nullptr;
 }
 
-std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
+std::shared_ptr<Process> Scheduler::createProcess(const std::string& name, size_t memorySize) {
     int pid = nextPid.fetch_add(1);
     auto process = std::make_shared<Process>(pid, name);
-    // -----------------------------------------------------------------------------------
-    // TESTER
-    // process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
-    // process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
-    // process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
-    // process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
-    //------------------------------------------------------------------------------------
+    
+    // Ensure memory size is set to the process
+    process->setMemorySize(memorySize);
 
     // RANDOMIZED INSTRUCTIONS
-
     static std::mt19937 rng(std::random_device{}());
     std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
     int totalIns = dist(rng);
@@ -432,8 +442,6 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
     for (auto& cmd : commands) {
         process->addCommand(cmd);
     }
-
-    //--------------------------------------------------------------------------------------------------
 
     {
         std::lock_guard<std::mutex> lock(allProcMutex);
@@ -447,6 +455,26 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name) {
     return process;
 }
 
+std::shared_ptr<Process> Scheduler::createCustomProcess(const std::string& name, size_t memorySize, const std::string& instructions) {
+    int pid = nextPid.fetch_add(1);
+    auto process = std::make_shared<Process>(pid, name);
+    process->setMemorySize(memorySize);
+    
+    // TODO: Parse the `instructions` string (split by ';') and convert them 
+    // into actual ICommand objects via your Command parsing logic, then call:
+    // process->addCommand(parsedCommand);
+
+    {
+        std::lock_guard<std::mutex> lock(allProcMutex);
+        allProcesses.push_back(process);
+    }
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        readyQueue.push(process);
+    }
+
+    return process;
+}
 void Scheduler::printStatus(std::ostream& os) {
     std::lock_guard<std::mutex> lock(allProcMutex);
 
@@ -490,4 +518,38 @@ void Scheduler::printStatus(std::ostream& os) {
 void Scheduler::writeReport(const std::string& path) {
     std::ofstream file(path);
     printStatus(file);
+}
+
+// Add to the bottom of Scheduler.cpp
+
+int Scheduler::getCpuUtilization() {
+    std::lock_guard<std::mutex> lock(allProcMutex);
+    int coresUsed = 0;
+    for (int i = 0; i < numCores; ++i) {
+        if (cores[i]->current != nullptr) coresUsed++;
+    }
+    return (numCores > 0) ? (coresUsed * 100) / numCores : 0;
+}
+
+size_t Scheduler::getActiveTicks() const {
+    return activeTicks.load();
+}
+
+size_t Scheduler::getIdleTicks() const {
+    return idleTicks.load();
+}
+
+size_t Scheduler::getTotalTicks() const {
+    return activeTicks.load() + idleTicks.load();
+}
+
+std::vector<std::shared_ptr<Process>> Scheduler::getRunningProcesses() {
+    std::lock_guard<std::mutex> lock(allProcMutex);
+    std::vector<std::shared_ptr<Process>> running;
+    for (const auto& p : allProcesses) {
+        if (p->getState() == Process::RUNNING) {
+            running.push_back(p); // Push the pointer, no asterisk
+        }
+    }
+    return running;
 }

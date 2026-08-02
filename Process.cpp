@@ -169,18 +169,39 @@ std::vector<std::string> Process::getScreenLogs() const {
     return screenLogs;
 }
 
-// Pass the current global clock directly into this function to check the deadline
 bool Process::isBusyWaiting(uint64_t currentGlobalClock) const {
-    // If current clock is less than our target deadline, we must continue waiting!
     return currentGlobalClock < busyWaitDeadline.load();
 }
 
-// Sets the deadline: (Current Global Clock + Config Delay)
 void Process::startBusyWait(uint64_t currentGlobalClock, int delayCycles) {
     busyWaitDeadline.store(currentGlobalClock + static_cast<uint64_t>(delayCycles));
 }
 
-// This function is no longer needed since the global clock advances automatically!
 void Process::tickBusyWait() {
-    // Left empty or can be safely deleted from your file
+}
+
+void Process::setMemorySize(size_t size) {
+    memorySize = size;
+}
+
+size_t Process::getMemorySize() const {
+    return memorySize;
+}
+
+bool Process::hasMemoryViolation() const {
+    return memoryViolation;
+}
+
+std::string Process::getViolationTime() const {
+    return violationTime;
+}
+
+std::string Process::getInvalidAddress() const {
+    return invalidAddress;
+}
+
+void Process::setMemoryViolation(const std::string& timestamp, const std::string& address) {
+    memoryViolation = true;
+    violationTime = timestamp;
+    invalidAddress = address;
 }

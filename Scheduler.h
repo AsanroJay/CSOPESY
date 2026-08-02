@@ -28,7 +28,15 @@ public:
 
     // For screen -s / -r lookups
     std::shared_ptr<Process> findProcess(const std::string& name);
-    std::shared_ptr<Process> createProcess(const std::string& name);
+    std::shared_ptr<Process> createProcess(const std::string& name, size_t memorySize = 64);
+    std::shared_ptr<Process> createCustomProcess(const std::string& name, size_t memorySize, const std::string& instructions);
+
+    // Getters for process-smi and vmstat outputs[cite: 1]
+    int getCpuUtilization();
+    size_t getActiveTicks() const;
+    size_t getIdleTicks() const;
+    size_t getTotalTicks() const;
+    std::vector<std::shared_ptr<Process>> getRunningProcesses();
 
 private:
     void workerLoop(int coreId);
@@ -57,6 +65,10 @@ private:
     std::atomic<bool>     isGenerating;
     std::atomic<int>      nextPid;
     std::atomic<uint64_t> lastGeneratedCycle{0};
+
+    // Atomic counters to track CPU ticks for vmstat[cite: 1]
+    std::atomic<size_t> activeTicks{0};
+    std::atomic<size_t> idleTicks{0};
 
     std::shared_ptr<std::atomic<uint64_t>> globalCpuCycles;
 

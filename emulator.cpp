@@ -77,21 +77,88 @@ int main() {
             scheduler->stopGeneration();
             cout << "Process generation stopped. Active processes will run to completion.\n";
         }
-        else if (command == "screen") {
+       else if (command == "screen") {
             if (argument == "-ls") {
                 scheduler->printStatus(cout);
             }
             else if (argument == "-s") {
-                if (processName.empty()) {
-                    cout << "Usage: screen -s <name>\n";
-                }
-                else if (scheduler->findProcess(processName)) {
-                    cout << "Process " << processName << " already exists.\n";
+                std::string memStr;
+                iss >> memStr;
+                
+                if (processName.empty() || memStr.empty()) {
+                    cout << "Usage: screen -s <name> <memory_size>\n";
                 }
                 else {
-                    auto process = scheduler->createProcess(processName);
-                    process->attachScreen();
-                    displayProcessScreen(*process);
+                    size_t memSize = 0;
+                    bool validMem = false;
+                    try {
+                        memSize = std::stoull(memStr);
+                        // Memory must be between 2^6 (64) and 2^16 (65536) and a power of 2
+                        if (memSize >= 64 && memSize <= 65536 && (memSize & (memSize - 1)) == 0) {
+                            validMem = true;
+                        }
+                    } catch (...) {}
+
+                    if (!validMem) {
+                        cout << "invalid memory allocation\n"; // Spec requirement
+                    }
+                    else if (scheduler->findProcess(processName)) {
+                        cout << "Process " << processName << " already exists.\n";
+                    }
+                    else {
+                        auto process = scheduler->createProcess(processName, memSize);
+                        process->attachScreen();
+                        displayProcessScreen(*process);
+                    }
+                }
+            }
+            else if (argument == "-c") {
+                std::string memStr;
+                iss >> memStr;
+                std::string instructions;
+                std::getline(iss, instructions);
+                
+                // Trim leading spaces and quotes
+                size_t first = instructions.find_first_not_of(" \t\"");
+                size_t last = instructions.find_last_not_of(" \t\"");
+                if (first != std::string::npos && last != std::string::npos) {
+                    instructions = instructions.substr(first, last - first + 1);
+                } else {
+                    instructions = "";
+                }
+
+                if (processName.empty() || memStr.empty() || instructions.empty()) {
+                    cout << "Usage: screen -c <name> <memory_size> \"<instructions>\"\n";
+                } else {
+                    size_t memSize = 0;
+                    bool validMem = false;
+                    try {
+                        memSize = std::stoull(memStr);
+                        if (memSize >= 64 && memSize <= 65536 && (memSize & (memSize - 1)) == 0) {
+                            validMem = true;
+                        }
+                    } catch (...) {}
+                    
+                    if (!validMem) {
+                        cout << "invalid memory allocation\n"; // Spec requirement[cite: 1]
+                    } else if (scheduler->findProcess(processName)) {
+                        cout << "Process " << processName << " already exists.\n";
+                    } else {
+                        // Count instructions separated by semicolon
+                        size_t insCount = 1;
+                        for (char c : instructions) {
+                            if (c == ';') insCount++;
+                        }
+                        
+                        // Enforce 1-50 instructions limit[cite: 1]
+                        if (insCount < 1 || insCount > 50) {
+                            cout << "invalid command\n"; // Spec requirement[cite: 1]
+                        } else {
+                            auto process = scheduler->createCustomProcess(processName, memSize, instructions);
+                            process->attachScreen();
+                            displayProcessScreen(*process);
+                        }
+                    }
                 }
             }
             else if (argument == "-r") {
@@ -101,10 +168,17 @@ int main() {
                 else {
                     auto process = scheduler->findProcess(processName);
                     
-                    // STRICTION ENFORCEMENT: Block if process doesn't exist OR if it is finished
-                    if (!process || process->isFinished()) {
-                        cout << "Process " << processName << " not found.\n"; // Spec requirement print
-                    }
+                    if (!process) {
+                        cout << "Process " << processName << " not found.\n";
+                    } 
+                    // Handle memory violation print requirement[cite: 1]
+                    else if (process->hasMemoryViolation()) {
+                        cout << "Process " << processName << " shut down due to memory access violation error that occurred at " 
+                             << process->getViolationTime() << ". " << process->getInvalidAddress() << " invalid.\n"; 
+                    } 
+                    else if (process->isFinished()) {
+                        cout << "Process " << processName << " not found.\n";
+                    } 
                     else {
                         process->attachScreen();
                         displayProcessScreen(*process);
@@ -112,7 +186,7 @@ int main() {
                 }
             }
             else {
-                cout << "Usage: screen -ls | screen -s <name> | screen -r <name>\n";
+                cout << "Usage: screen -ls | screen -s <name> <memory> | screen -c <name> <memory> \"<instructions>\" | screen -r <name>\n";
             }
         }
         else if (command == "report-util") {
@@ -124,10 +198,36 @@ int main() {
             printHeader();
         }
         else if (command == "vmstat") {
-            cout << "VM stat placeholder";
+            std::cout << "--------------------------------------------------\n";
+            std::cout << "VMSTAT\n";
+            std::cout << "--------------------------------------------------\n";
+            std::cout << "Total CPU Ticks: " << scheduler->getTotalTicks() << "\n";
+            std::cout << "Active Ticks:    " << scheduler->getActiveTicks() << "\n";
+            std::cout << "Idle Ticks:      " << scheduler->getIdleTicks() << "\n";
+            std::cout << "CPU Utilization: " << scheduler->getCpuUtilization() << "%\n";
+            std::cout << "--------------------------------------------------\n";
         }
         else if (command == "process-smi") {
-            cout << "Process-smi placeholder";
+            std::cout << "--------------------------------------------------\n";
+            std::cout << "PROCESS-SMI\n";
+            std::cout << "--------------------------------------------------\n";
+            std::cout << "CPU-Util: " << scheduler->getCpuUtilization() << "%\n";
+            std::cout << "--------------------------------------------------\n";
+            std::cout << "Running Processes:\n";
+            
+            auto runningProcesses = scheduler->getRunningProcesses();
+            if (runningProcesses.empty()) {
+                std::cout << " (none)\n";
+            } else {
+                for (const auto& p : runningProcesses) {
+
+                    std::cout << p->getName() 
+                              << " [PID: " << p->getPID() << "]"
+                              << " Core: " << p->getCoreId() 
+                              << " Mem: " << p->getMemorySize() << "B\n";
+                }
+            }
+            std::cout << "--------------------------------------------------\n";
         }
         else if (command == "exit") {
             systemRunning->store(false);
@@ -222,3 +322,4 @@ void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles, Schedu
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
+
