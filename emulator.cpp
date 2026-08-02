@@ -62,11 +62,15 @@ int main() {
                 cout << "  Min instructions : " << Config::minIns << "\n";
                 cout << "  Max instructions : " << Config::maxIns << "\n";
                 cout << "  Delay per exec   : " << Config::delayPerExec << "\n";
+                cout << "  Max overall mem  : " << Config::maxOverallMem << "\n";
+                cout << "  Mem per frame    : " << Config::memPerFrame << "\n";
+                cout << "  Mem per process  : " << Config::memPerProc << "\n";
                 cout << "Type \"scheduler-start\" to begin generating processes.\n";
             }
         }
         else if (command == "scheduler-start") {
             scheduler->startGeneration();
+            cout << "Type 'scheduler-stop' to stop process scheduling";
             cout << "Process generation started. Every " << Config::batchProcessFreq << " CPU cycle(s).\n";
         }
         else if (command == "scheduler-stop") {
@@ -118,6 +122,12 @@ int main() {
         else if (command == "clear") {
             system("cls");
             printHeader();
+        }
+        else if (command == "vmstat") {
+            cout << "VM stat placeholder";
+        }
+        else if (command == "process-smi") {
+            cout << "Process-smi placeholder";
         }
         else if (command == "exit") {
             systemRunning->store(false);
