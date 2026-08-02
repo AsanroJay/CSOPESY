@@ -36,6 +36,11 @@ public:
     size_t getActiveTicks() const;
     size_t getIdleTicks() const;
     size_t getTotalTicks() const;
+    size_t getTotalMemory() const;
+    size_t getUsedMemory() const;
+    size_t getFreeMemory() const;
+    size_t getPagedIn() const;
+    size_t getPagedOut() const;
     std::vector<std::shared_ptr<Process>> getRunningProcesses();
 
 private:

@@ -258,7 +258,7 @@ void Scheduler::runSingleCycleStep() {
                 readyQueue.pop();
 
                 if (!memory.isAllocated(process->getPID())) {
-                    int base = memory.allocate(process->getPID(), process->getName());
+                    int base = memory.allocate(process->getPID(), process->getMemorySize());
                     if (base < 0) {
                         // Memory full: send back to the rear of the ready queue.
                         readyQueue.push(process);
@@ -541,6 +541,26 @@ size_t Scheduler::getIdleTicks() const {
 
 size_t Scheduler::getTotalTicks() const {
     return activeTicks.load() + idleTicks.load();
+}
+
+size_t Scheduler::getTotalMemory() const {
+    return memory.getMaximumSize(); 
+}
+
+size_t Scheduler::getUsedMemory() const {
+    return memory.getCurrentAllocatedSize(); 
+}
+
+size_t Scheduler::getFreeMemory() const {
+    return getTotalMemory() - getUsedMemory();
+}
+
+size_t Scheduler::getPagedIn() const {
+    return memory.getNumPagedIn(); 
+}
+
+size_t Scheduler::getPagedOut() const {
+    return memory.getNumPagedOut(); 
 }
 
 std::vector<std::shared_ptr<Process>> Scheduler::getRunningProcesses() {

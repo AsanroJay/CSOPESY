@@ -197,15 +197,15 @@ int main() {
             system("cls");
             printHeader();
         }
-        else if (command == "vmstat") {
-            std::cout << "--------------------------------------------------\n";
-            std::cout << "VMSTAT\n";
-            std::cout << "--------------------------------------------------\n";
-            std::cout << "Total CPU Ticks: " << scheduler->getTotalTicks() << "\n";
-            std::cout << "Active Ticks:    " << scheduler->getActiveTicks() << "\n";
-            std::cout << "Idle Ticks:      " << scheduler->getIdleTicks() << "\n";
-            std::cout << "CPU Utilization: " << scheduler->getCpuUtilization() << "%\n";
-            std::cout << "--------------------------------------------------\n";
+       else if (command == "vmstat") {
+            std::cout << scheduler->getTotalMemory() << " bytes total memory\n";
+            std::cout << scheduler->getUsedMemory()  << " bytes used memory\n";
+            std::cout << scheduler->getFreeMemory()  << " bytes free memory\n";
+            std::cout << scheduler->getIdleTicks()   << " idle cpu ticks\n";
+            std::cout << scheduler->getActiveTicks() << " active cpu ticks\n";
+            std::cout << scheduler->getTotalTicks()  << " total cpu ticks\n";
+            std::cout << scheduler->getPagedIn()     << " pages paged in\n";
+            std::cout << scheduler->getPagedOut()    << " pages paged out\n";
         }
         else if (command == "process-smi") {
             std::cout << "--------------------------------------------------\n";
