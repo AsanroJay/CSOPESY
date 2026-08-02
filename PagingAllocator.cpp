@@ -39,10 +39,49 @@ void* PagingAllocator::allocate(size_t size) {
     std::lock_guard<std::mutex> lock(mutex);
 
     size_t numFramesNeeded = (size + frameSize - 1) / frameSize;  // ceil
-    if (numFramesNeeded == 0 || numFramesNeeded > freeFrameList.size()) {
-        return nullptr;  // not enough free frames -> allocation fails
+    
+    // Failsafe: If a single process requires more frames than the entire RAM, reject it
+    if (numFramesNeeded == 0 || numFramesNeeded > numFrames) {
+        return nullptr;  
     }
 
+    // --- PAGE REPLACEMENT LOGIC ---
+    // If we don't have enough free frames, evict pages to the backing store
+    while (freeFrameList.size() < numFramesNeeded) {
+        bool evicted = false;
+        
+        // Simple First-Found Eviction (You can upgrade this to LRU/FIFO later if desired)
+        for (size_t i = 0; i < numFrames; ++i) {
+            if (frameOwners[i].allocId != -1) {
+                int victimAllocId = frameOwners[i].allocId;
+                size_t victimPage = frameOwners[i].pageIndex;
+
+                // 1. Page out to backing store (Increments numPagedOut)
+                pageOutFrame(i, victimAllocId, victimPage);
+
+                // 2. Invalidate the victim's page table entry
+                for (auto& pair : allocations) {
+                    if (pair.second.ownerId == victimAllocId) {
+                        pair.second.pageTable[victimPage].valid = false;
+                        pair.second.pageTable[victimPage].frameNumber = -1;
+                        break;
+                    }
+                }
+
+                // 3. Reclaim the physical frame
+                frameOwners[i].allocId = -1;
+                freeFrameList.push_back(i);
+                currentAllocatedSize -= frameSize; // Deduct from physical RAM usage
+                
+                evicted = true;
+                break; 
+            }
+        }
+        
+        if (!evicted) return nullptr; // Absolute failsafe
+    }
+
+    // --- STANDARD ALLOCATION ---
     int allocId = nextAllocId++;
     Allocation alloc;
     alloc.ownerId = allocId;
@@ -56,11 +95,14 @@ void* PagingAllocator::allocate(size_t size) {
 
         PageTableEntry& pte = alloc.pageTable[page];
         pte.frameNumber = static_cast<int>(frame);
-        pte.valid       = true;   // demand paging would leave this false until first touch
+        pte.valid       = true;   
         pte.dirty       = false;
 
         frameOwners[frame] = FrameOwner{allocId, page};
         if (page == 0) firstFrame = frame;
+        
+        // 4. Trigger page-in counter for the new frames being brought into RAM
+        pageInFrame(frame, allocId, page);
     }
 
     currentAllocatedSize += numFramesNeeded * frameSize;
