@@ -44,7 +44,7 @@ int main() {
         if (command.empty()) {
             // ignore
         }
-        else if (command == "initialize") {
+       else if (command == "initialize") {
             if (scheduler) {
                 cout << "Already initialized.\n";
                 continue;
@@ -64,7 +64,8 @@ int main() {
                 cout << "  Delay per exec   : " << Config::delayPerExec << "\n";
                 cout << "  Max overall mem  : " << Config::maxOverallMem << "\n";
                 cout << "  Mem per frame    : " << Config::memPerFrame << "\n";
-                cout << "  Mem per process  : " << Config::memPerProc << "\n";
+                cout << "  Min mem per proc : " << Config::minMemPerProc << "\n";
+                cout << "  Max mem per proc : " << Config::maxMemPerProc << "\n";
                 cout << "Type \"scheduler-start\" to begin generating processes.\n";
             }
         }

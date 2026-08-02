@@ -6,7 +6,7 @@
 #include <iostream>
 #include <limits>
 #include <random>
-
+#include <cmath>
 #include "ArithmeticCommand.h"
 #include "Config.h"
 #include "DeclareCommand.h"
@@ -117,7 +117,7 @@ Scheduler::Scheduler(int numCores, std::shared_ptr<std::atomic<uint64_t>> extern
       isGenerating(false),
       nextPid(1),
       globalCpuCycles(externalClock),
-      memory(Config::maxOverallMem, Config::memPerFrame, Config::memPerProc) {
+      memory(Config::maxOverallMem, Config::memPerFrame, Config::minMemPerProc) {
     for (int i = 0; i < numCores; ++i) {
         cores.push_back(std::make_unique<CoreSlot>());
     }
@@ -196,24 +196,21 @@ void Scheduler::runSingleCycleStep() {
         int pid = nextPid.fetch_add(1);
         std::string name = "p" + zeroPad(pid, 2);
         auto process = std::make_shared<Process>(pid, name);
-        //---------------------------------------------------------------------------
-        // TESTER
 
-        // for (int i = 0; i < 500; ++i) {
-        //     process->addCommand(std::make_shared<PrintCommand>("Step " + std::to_string(i + 1) + " from " + name + "!"));
-        // }
-        // process->addCommand(std::make_shared<DeclareCommand>("counter", 0));
-        // process->addCommand(std::make_shared<PrintCommand>("Step 1 from " + name + "!"));
-        // process->addCommand(std::make_shared<PrintCommand>("Step 2 from " + name + "!"));
-        // process->addCommand(std::make_shared<PrintCommand>("Final step from " + name + "!"));
-
-        //------------------------------------------------------------------------------------------------
-
-
-        // // RANDOMIZED INSTRUCTIONS
-
-        // Randomize instruction count between min-ins and max-ins
+        // --- POWER OF 2 MEMORY GENERATOR ---
         static std::mt19937 rng(std::random_device{}());
+        
+        // Calculate the base-2 exponents for the min and max bounds
+        int minExp = static_cast<int>(std::log2(Config::minMemPerProc));
+        int maxExp = static_cast<int>(std::log2(Config::maxMemPerProc));
+        
+        // Roll a random exponent and convert it back to a power of 2
+        std::uniform_int_distribution<int> memDist(minExp, maxExp);
+        size_t rolledMem = 1ULL << memDist(rng); 
+        
+        process->setMemorySize(rolledMem);
+
+        // --- RANDOMIZED INSTRUCTIONS ---
         std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
         int totalIns = dist(rng);
 
@@ -225,8 +222,6 @@ void Scheduler::runSingleCycleStep() {
         for (auto& cmd : commands) {
             process->addCommand(cmd);
         }
-
-        //--------------------------------------------------------------------------------------------------
 
         {
             std::lock_guard<std::mutex> lock(allProcMutex);

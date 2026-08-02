@@ -17,7 +17,8 @@ namespace Config {
     // Memory manager parameters (first-fit flat allocator).
     inline int         maxOverallMem     = 16384;  // total bytes of main memory
     inline int         memPerFrame       = 16;     // bytes per frame
-    inline int         memPerProc        = 4096;   // fixed bytes each process needs
+    inline size_t      minMemPerProc     = 64;     // default minimum
+    inline size_t      maxMemPerProc     = 4096;   // default maximum
 
     // Legacy aliases so existing Scheduler/Process code compiles unchanged
     inline int& NUM_CORES             = numCpu;
