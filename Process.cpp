@@ -192,20 +192,23 @@ size_t Process::getMemorySize() const {
     return memorySize;
 }
 
+void Process::setMemoryViolation(const std::string& timestamp, const std::string& address) {
+    std::lock_guard<std::mutex> lock(violationMutex);
+    violationTime = timestamp;
+    invalidAddress = address;
+    memoryViolation.store(true);   // set last, after strings are written
+}
+
 bool Process::hasMemoryViolation() const {
-    return memoryViolation;
+    return memoryViolation.load();
 }
 
 std::string Process::getViolationTime() const {
+    std::lock_guard<std::mutex> lock(violationMutex);
     return violationTime;
 }
 
 std::string Process::getInvalidAddress() const {
+    std::lock_guard<std::mutex> lock(violationMutex);
     return invalidAddress;
-}
-
-void Process::setMemoryViolation(const std::string& timestamp, const std::string& address) {
-    memoryViolation = true;
-    violationTime = timestamp;
-    invalidAddress = address;
 }

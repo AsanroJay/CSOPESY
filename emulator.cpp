@@ -213,6 +213,10 @@ int main() {
             std::cout << "PROCESS-SMI\n";
             std::cout << "--------------------------------------------------\n";
             std::cout << "CPU-Util: " << scheduler->getCpuUtilization() << "%\n";
+            size_t used = scheduler->getUsedMemory();
+            size_t total = scheduler->getTotalMemory();
+            std::cout << "Memory Usage: " << used << "B / " << total << "B\n";
+            std::cout << "Memory Util: " << (total ? (used * 100 / total) : 0) << "%\n";
             std::cout << "--------------------------------------------------\n";
             std::cout << "Running Processes:\n";
             
@@ -224,7 +228,6 @@ int main() {
 
                     std::cout << p->getName() 
                               << " [PID: " << p->getPID() << "]"
-                              << " Core: " << p->getCoreId() 
                               << " Mem: " << p->getMemorySize() << "B\n";
                 }
             }

@@ -96,7 +96,9 @@ private:
     std::atomic<uint64_t> busyWaitDeadline{0};
 
     size_t memorySize = 0;
-    bool memoryViolation = false;
-    std::string violationTime = "";
-    std::string invalidAddress = "";
+
+    mutable std::mutex violationMutex;
+    std::atomic<bool> memoryViolation{false};
+    std::string violationTime;
+    std::string invalidAddress;
 };

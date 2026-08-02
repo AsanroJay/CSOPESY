@@ -118,7 +118,7 @@ Scheduler::Scheduler(int numCores, std::shared_ptr<std::atomic<uint64_t>> extern
       isGenerating(false),
       nextPid(1),
       globalCpuCycles(externalClock),
-      memory(Config::maxOverallMem, Config::memPerFrame, Config::minMemPerProc) {
+      memory(Config::maxOverallMem, Config::memPerFrame, static_cast<int>(Config::minMemPerProc)) {
     for (int i = 0; i < numCores; ++i) {
         cores.push_back(std::make_unique<CoreSlot>());
     }
@@ -477,6 +477,7 @@ void Scheduler::printStatus(std::ostream& os) {
 
     int coresUsed = 0;
     for (int i = 0; i < numCores; ++i) {
+        std::lock_guard<std::mutex> coreLock(cores[i]->mutex);
         if (cores[i]->current != nullptr) coresUsed++;
     }
     int coresAvailable  = numCores - coresUsed;
@@ -517,12 +518,10 @@ void Scheduler::writeReport(const std::string& path) {
     printStatus(file);
 }
 
-// Add to the bottom of Scheduler.cpp
-
 int Scheduler::getCpuUtilization() {
-    std::lock_guard<std::mutex> lock(allProcMutex);
     int coresUsed = 0;
     for (int i = 0; i < numCores; ++i) {
+        std::lock_guard<std::mutex> coreLock(cores[i]->mutex);
         if (cores[i]->current != nullptr) coresUsed++;
     }
     return (numCores > 0) ? (coresUsed * 100) / numCores : 0;
