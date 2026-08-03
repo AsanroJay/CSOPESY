@@ -1,9 +1,34 @@
 #include "Config.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+
+namespace {
+    template <typename T>
+    T clampToRange(T value, T minValue, T maxValue) {
+        return std::max(minValue, std::min(maxValue, value));
+    }
+
+    int clampToPowerOfTwoRange(int value) {
+        constexpr int minValue = 64;
+        constexpr int maxValue = 65536;
+
+        if (value < minValue) return minValue;
+        if (value > maxValue) return maxValue;
+        if ((value & (value - 1)) == 0) return value;
+
+        int roundedDown = 1;
+        while (roundedDown < value) {
+            roundedDown <<= 1;
+        }
+        
+        return roundedDown;
+    }
+}
 
 bool Config::loadFromFile(const std::string& path) {
     std::ifstream file(path);
@@ -21,7 +46,14 @@ bool Config::loadFromFile(const std::string& path) {
         if (!(iss >> key)) continue;
 
         if (key == "num-cpu") {
-            iss >> Config::numCpu;
+            int parsedValue = 0;
+            if (iss >> parsedValue) {
+                const int clampedValue = clampToRange(parsedValue, 1, 128);
+                if (clampedValue != parsedValue) {
+                    std::cerr << "Warning: \"num-cpu\" must be between 1 and 128; using " << clampedValue << " instead.\n";
+                }
+                Config::numCpu = clampedValue;
+            }
         } else if (key == "scheduler") {
             iss >> Config::scheduler;
             // Strip surrounding quotes if present (e.g. "fcfs" -> fcfs)
@@ -30,17 +62,59 @@ bool Config::loadFromFile(const std::string& path) {
                 s = s.substr(1, s.size() - 2);
             }
         } else if (key == "quantum-cycles") {
-            iss >> Config::quantumCycles;
+            uint64_t parsedValue = 0;
+            if (iss >> parsedValue) {
+                const uint64_t clampedValue = clampToRange(parsedValue, uint64_t{1}, uint64_t{4294967296});
+                if (clampedValue != parsedValue) {
+                    std::cerr << "Warning: \"quantum-cycles\" must be between 1 and 2^32; using " << clampedValue << " instead.\n";
+                }
+                Config::quantumCycles = clampedValue;
+            }
         } else if (key == "batch-process-freq") {
-            iss >> Config::batchProcessFreq;
+            uint64_t parsedValue = 0;
+            if (iss >> parsedValue) {
+                const uint64_t clampedValue = clampToRange(parsedValue, uint64_t{1}, uint64_t{4294967296});
+                if (clampedValue != parsedValue) {
+                    std::cerr << "Warning: \"batch-process-freq\" must be between 1 and 2^32; using " << clampedValue << " instead.\n";
+                }
+                Config::batchProcessFreq = clampedValue;
+            }
         } else if (key == "min-ins") {
-            iss >> Config::minIns;
+            uint64_t parsedValue = 0;
+            if (iss >> parsedValue) {
+                const uint64_t clampedValue = clampToRange(parsedValue, uint64_t{1}, uint64_t{4294967296});
+                if (clampedValue != parsedValue) {
+                    std::cerr << "Warning: \"min-ins\" must be between 1 and 2^32; using " << clampedValue << " instead.\n";
+                }
+                Config::minIns = clampedValue;
+            }
         } else if (key == "max-ins") {
-            iss >> Config::maxIns;
-        } else if (key == "delay-per-exec") {
-            iss >> Config::delayPerExec;
+            uint64_t parsedValue = 0;
+            if (iss >> parsedValue) {
+                const uint64_t clampedValue = clampToRange(parsedValue, uint64_t{1}, uint64_t{4294967296});
+                if (clampedValue != parsedValue) {
+                    std::cerr << "Warning: \"max-ins\" must be between 1 and 2^32; using " << clampedValue << " instead.\n";
+                }
+                Config::maxIns = clampedValue;
+            }
+        } else if (key == "delay-per-exec" || key == "delays-per-exec") {
+            uint64_t parsedValue = 0;
+            if (iss >> parsedValue) {
+                const uint64_t clampedValue = clampToRange(parsedValue, uint64_t{0}, uint64_t{4294967296});
+                if (clampedValue != parsedValue) {
+                    std::cerr << "Warning: \"delay-per-exec\" must be between 0 and 2^32; using " << clampedValue << " instead.\n";
+                }
+                Config::delayPerExec = clampedValue;
+            }
         } else if (key == "max-overall-mem") {
-            iss >> Config::maxOverallMem;
+            int parsedValue = 0;
+            if (iss >> parsedValue) {
+                const int normalizedValue = clampToPowerOfTwoRange(parsedValue);
+                if (normalizedValue != parsedValue) {
+                    std::cerr << "Warning: \"max-overall-mem\" must be a power of 2 between 64 and 65536 bytes; using " << normalizedValue << " instead.\n";
+                }
+                Config::maxOverallMem = normalizedValue;
+            }
         } else if (key == "min-mem-per-proc") {
             iss >> Config::minMemPerProc;
         } else if (key == "max-mem-per-proc") {

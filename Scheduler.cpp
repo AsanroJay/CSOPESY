@@ -47,10 +47,10 @@ static std::shared_ptr<ICommand> makeRandomInstruction(const std::string& proces
 static std::vector<std::shared_ptr<ICommand>> makeRandomCommandBlock(const std::string& processName,
                                                                      const std::vector<std::string>& variableNames,
                                                                      int depth,
-                                                                     int count) {
+                                                                     size_t count) {
     std::vector<std::shared_ptr<ICommand>> commands;
     commands.reserve(count);
-    for (int i = 0; i < count; ++i) {
+    for (size_t i = 0; i < count; ++i) {
         commands.push_back(makeRandomInstruction(processName, variableNames, depth));
     }
     return commands;
@@ -212,8 +212,8 @@ void Scheduler::runSingleCycleStep() {
         process->setMemorySize(rolledMem);
 
         // --- RANDOMIZED INSTRUCTIONS ---
-        std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
-        int totalIns = dist(rng);
+        std::uniform_int_distribution<uint64_t> dist(Config::minIns, Config::maxIns);
+        size_t totalIns = static_cast<size_t>(dist(rng));
 
         // Build a list of candidate variable names for randomized instructions
         std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
@@ -431,8 +431,8 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name, size_
 
     // RANDOMIZED INSTRUCTIONS
     static std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(Config::minIns, Config::maxIns);
-    int totalIns = dist(rng);
+    std::uniform_int_distribution<uint64_t> dist(Config::minIns, Config::maxIns);
+    size_t totalIns = static_cast<size_t>(dist(rng));
 
     std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
     auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
