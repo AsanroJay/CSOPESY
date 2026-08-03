@@ -69,16 +69,12 @@ size_t MemoryManager::getCurrentAllocatedSize() const {
 }
 
 size_t MemoryManager::getNumPagedIn() const {
-    if (auto paging = dynamic_cast<PagingAllocator*>(allocator.get())) {
-        return paging->getNumPagedIn();
-    }
+    if (allocator) return allocator->getNumPagedIn();
     return 0;
 }
 
 size_t MemoryManager::getNumPagedOut() const {
-    if (auto paging = dynamic_cast<PagingAllocator*>(allocator.get())) {
-        return paging->getNumPagedOut();
-    }
+    if (allocator) return allocator->getNumPagedOut();
     return 0;
 }
 
@@ -93,9 +89,9 @@ bool MemoryManager::accessPage(int pid, size_t virtualAddress) {
     // Convert the raw byte address into a page index
     size_t pageIndex = virtualAddress / memPerFrame;
     
-    if (auto paging = dynamic_cast<PagingAllocator*>(allocator.get())) {
-        // This triggers the LRU and demand paging logic we just wrote
-        return paging->accessPage(it->second, pageIndex);
+    // Call it directly - no dynamic_cast needed!
+    if (allocator) {
+        return allocator->accessPage(it->second, pageIndex);
     }
     
     return true; 

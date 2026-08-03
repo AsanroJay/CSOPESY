@@ -24,13 +24,15 @@ public:
     void   deallocate(void* ptr) override;
     String visualizeMemory() override;
 
-    size_t getNumPagedIn() const;
-    size_t getNumPagedOut() const;
+
+    size_t getNumPagedIn() const override;
+    size_t getNumPagedOut() const override;
+
 
     // The access seam for demand paging.
     // Returns true if the page was already resident (a hit).
     // Returns false if a page fault occurred (the page was just loaded into a frame).
-    bool accessPage(void* handle, size_t pageIndex);
+    bool accessPage(void* handle, size_t pageIndex) override;
 
 private:
     struct Allocation {

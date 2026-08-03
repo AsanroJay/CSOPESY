@@ -229,6 +229,11 @@ void Scheduler::runSingleCycleStep() {
         size_t rolledMem = size_t{1} << randomInt(minExp, maxExp);
 
         auto process = std::make_shared<Process>(pid, name, rolledMem);
+
+        process->setPageAccessHandler([this, pid](size_t address) {
+            return memory.accessPage(pid, address);
+        });
+        
         populateRandomInstructions(process);
 
         {

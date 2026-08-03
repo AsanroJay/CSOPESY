@@ -23,6 +23,8 @@ public:
     virtual size_t getNumPagedIn() const { return 0; }
     virtual size_t getNumPagedOut() const { return 0; }
 
+    // --- NEW: Add the virtual access seam here ---
+   virtual bool accessPage(void* handle, size_t pageIndex) { return true; }
 protected:
     MemoryAllocatorType memoryAllocatorType;
     struct MemoryBlock {
