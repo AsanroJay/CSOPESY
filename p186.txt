@@ -1,5 +1,0 @@
-Process name: p186
-Logs:
-
-(07/11/2026 03:34:07PM) Core:1 "Hello world from p186!"
-(07/11/2026 03:34:07PM) Core:1 "SLEEP: 1 ticks"

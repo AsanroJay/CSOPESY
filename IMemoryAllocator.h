@@ -16,6 +16,13 @@ public:
     virtual void deallocate(void* ptr) = 0;
     virtual String visualizeMemory() = 0;
 
+    // TWO GETTERS for new stats:
+    virtual size_t getMaximumSize() const { return maximumSize; }
+    virtual size_t getCurrentAllocatedSize() const { return currentAllocatedSize; }
+    // --- NEW VIRTUAL GETTERS FOR PAGING STATS ---
+    virtual size_t getNumPagedIn() const { return 0; }
+    virtual size_t getNumPagedOut() const { return 0; }
+
 protected:
     MemoryAllocatorType memoryAllocatorType;
     struct MemoryBlock {
@@ -29,4 +36,5 @@ protected:
 
     size_t maximumSize;           // total bytes of simulated main memory
     size_t currentAllocatedSize;  // bytes currently handed out
+    
 };

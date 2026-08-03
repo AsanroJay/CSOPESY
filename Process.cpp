@@ -1,11 +1,13 @@
 #include "Process.h"
 
+#include <filesystem>
 #include <iostream>
+#include <limits>
 
 #include "Config.h"
 #include "Utils.h"
 
-Process::Process(int pid, const std::string& name)
+Process::Process(int pid, const std::string& name, size_t memorySize)
     : pid(pid),
       name(name),
       createdAt(currentTimestamp()),
@@ -15,7 +17,8 @@ Process::Process(int pid, const std::string& name)
       sleepTicks(0),
       fileOpened(false),
       screenSessionExists(false),
-      screenAttached(false) {}
+      screenAttached(false),
+      processMemory(std::max<size_t>(memorySize, ProcessMemory::SYMBOL_TABLE_BYTES)) {}
 
 void Process::addCommand(std::shared_ptr<ICommand> command) {
     commandList.push_back(std::move(command));
@@ -26,13 +29,28 @@ void Process::executeCurrentCommand(int coreId) {
         return;
     }
     int index = commandCounter.load();
-    bool finished = commandList[index]->execute(coreId, *this);
-    if (finished) {
+    if (index < 0 || index >= static_cast<int>(commandList.size())) {
+        return;
+    }
+
+    bool completed = commandList[index]->execute(coreId, *this);
+
+    // A command that reports "not yet" took a page fault, so the program
+    // counter stays put and the instruction is restarted on the next tick.
+    if (completed) {
         commandCounter.fetch_add(1);
     }
 }
 
 void Process::finishExecution() {
+    if (isTerminated()) {
+        if (fileOpened) {
+            outFile.close();
+            fileOpened = false;
+        }
+        return;
+    }
+
     currentState.store(FINISHED);
 
     {
@@ -47,6 +65,7 @@ void Process::finishExecution() {
 }
 
 bool Process::isFinished() const {
+    if (memoryViolation.load()) return true;
     return commandCounter.load() >= static_cast<int>(commandList.size());
 }
 
@@ -64,7 +83,9 @@ void Process::logPrint(int coreId, const std::string& message) {
     }
 
     if (!fileOpened) {
-        outFile.open(name + ".txt");
+        std::filesystem::create_directories("process_logs");
+        std::string path = "process_logs/" + name + ".txt";
+        outFile.open(path);
         outFile << "Process name: " << name << "\n";
         outFile << "Logs:\n\n";
         fileOpened = true;
@@ -81,17 +102,71 @@ void Process::setCoreId(int coreId) {
     this->coreId.store(coreId);
 }
 
-void Process::declareVariable(const std::string& name, uint16_t value) {
-    symbolTable.declareVariable(name, value);
+// --- Variables ------------------------------------------------------------
+
+bool Process::resolveVariableAddress(const std::string& name, size_t& outAddress, bool allowCreate) {
+    if (allowCreate) {
+        return symbolTable.addressOf(name, outAddress);
+    }
+    return symbolTable.find(name, outAddress);
 }
 
-uint16_t Process::getVariable(const std::string& name) {
-    return symbolTable.getVariable(name);
+MemoryStatus Process::declareVariable(const std::string& name, uint16_t value) {
+    size_t address = 0;
+    if (!resolveVariableAddress(name, address, true)) {
+        // 32-variable limit reached: the spec says to ignore the declaration.
+        return MemoryStatus::IGNORED;
+    }
+    return writeMemory(address, value);
 }
 
-void Process::setVariable(const std::string& name, uint32_t value) {
-    symbolTable.setVariable(name, value);
+MemoryStatus Process::readVariable(const std::string& name, uint16_t& outValue) {
+    size_t address = 0;
+    if (!resolveVariableAddress(name, address, true)) {
+        // Undeclared and no slot left: reads fall back to 0 rather than failing.
+        outValue = 0;
+        return MemoryStatus::OK;
+    }
+    return readMemory(address, outValue);
 }
+
+MemoryStatus Process::writeVariable(const std::string& name, uint32_t value) {
+    size_t address = 0;
+    if (!resolveVariableAddress(name, address, true)) {
+        return MemoryStatus::IGNORED;
+    }
+
+    // uint16 values are clamped to [0, 65535].
+    uint32_t clamped = std::min<uint32_t>(value, std::numeric_limits<uint16_t>::max());
+    return writeMemory(address, static_cast<uint16_t>(clamped));
+}
+
+// --- Raw memory -----------------------------------------------------------
+
+// These two functions are the seam for demand paging. Both pages a uint16 can
+// span are known here, so making them resident (and returning PAGE_FAULT so the
+// instruction restarts) is a local change -- no command needs to be touched.
+MemoryStatus Process::readMemory(size_t address, uint16_t& outValue) {
+    if (!processMemory.isValidWordAddress(address)) {
+        raiseAccessViolation(address);
+        return MemoryStatus::VIOLATION;
+    }
+
+    outValue = processMemory.readWord(address);
+    return MemoryStatus::OK;
+}
+
+MemoryStatus Process::writeMemory(size_t address, uint16_t value) {
+    if (!processMemory.isValidWordAddress(address)) {
+        raiseAccessViolation(address);
+        return MemoryStatus::VIOLATION;
+    }
+
+    processMemory.writeWord(address, value);
+    return MemoryStatus::OK;
+}
+
+// --- Scheduling state -----------------------------------------------------
 
 bool Process::isSleeping() const {
     return sleepTicks.load() > 0;
@@ -169,18 +244,53 @@ std::vector<std::string> Process::getScreenLogs() const {
     return screenLogs;
 }
 
-// Pass the current global clock directly into this function to check the deadline
 bool Process::isBusyWaiting(uint64_t currentGlobalClock) const {
-    // If current clock is less than our target deadline, we must continue waiting!
     return currentGlobalClock < busyWaitDeadline.load();
 }
 
-// Sets the deadline: (Current Global Clock + Config Delay)
 void Process::startBusyWait(uint64_t currentGlobalClock, int delayCycles) {
     busyWaitDeadline.store(currentGlobalClock + static_cast<uint64_t>(delayCycles));
 }
 
-// This function is no longer needed since the global clock advances automatically!
-void Process::tickBusyWait() {
-    // Left empty or can be safely deleted from your file
+size_t Process::getMemorySize() const {
+    return processMemory.getSize();
+}
+
+ProcessMemory& Process::memory() {
+    return processMemory;
+}
+
+// --- Access violation -----------------------------------------------------
+
+void Process::raiseAccessViolation(size_t address) {
+    {
+        std::lock_guard<std::mutex> lock(violationMutex);
+        if (memoryViolation.load()) return;  // keep the first violation
+        violationTime  = currentTimeOfDay();
+        invalidAddress = toHexAddress(address);
+    }
+
+    currentState.store(TERMINATED);
+    memoryViolation.store(true);  // set last, after the strings are written
+
+    logPrint(coreId.load(),
+             "ACCESS VIOLATION at " + toHexAddress(address) + " - process shut down");
+}
+
+bool Process::hasMemoryViolation() const {
+    return memoryViolation.load();
+}
+
+bool Process::isTerminated() const {
+    return memoryViolation.load();
+}
+
+std::string Process::getViolationTime() const {
+    std::lock_guard<std::mutex> lock(violationMutex);
+    return violationTime;
+}
+
+std::string Process::getInvalidAddress() const {
+    std::lock_guard<std::mutex> lock(violationMutex);
+    return invalidAddress;
 }
