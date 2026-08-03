@@ -69,5 +69,7 @@ Testing/
 .cache/
 
 #memory stamps and process texts
+memory_snapshots/
+process_logs/
 memory_stamp_*.txt
 p*.txt
