@@ -451,6 +451,11 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name, size_
     int pid = nextPid.fetch_add(1);
     auto process = std::make_shared<Process>(pid, name, memorySize);
 
+    // --- NEW: Inject the Demand Paging MMU hook ---
+    process->setPageAccessHandler([this, pid](size_t address) {
+        return memory.accessPage(pid, address);
+    });
+
     populateRandomInstructions(process);
 
     {
@@ -476,6 +481,11 @@ std::shared_ptr<Process> Scheduler::createCustomProcess(const std::string& name,
 
     int pid = nextPid.fetch_add(1);
     auto process = std::make_shared<Process>(pid, name, memorySize);
+
+    // --- NEW: Inject the Demand Paging MMU hook ---
+    process->setPageAccessHandler([this, pid](size_t address) {
+        return memory.accessPage(pid, address);
+    });
 
     for (auto& command : commands) {
         process->addCommand(command);

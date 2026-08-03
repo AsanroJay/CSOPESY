@@ -146,10 +146,20 @@ MemoryStatus Process::writeVariable(const std::string& name, uint32_t value) {
 // These two functions are the seam for demand paging. Both pages a uint16 can
 // span are known here, so making them resident (and returning PAGE_FAULT so the
 // instruction restarts) is a local change -- no command needs to be touched.
+void Process::setPageAccessHandler(PageAccessHandler handler) {
+    pageAccessHandler = std::move(handler);
+}
+
 MemoryStatus Process::readMemory(size_t address, uint16_t& outValue) {
     if (!processMemory.isValidWordAddress(address)) {
         raiseAccessViolation(address);
         return MemoryStatus::VIOLATION;
+    }
+
+    // --- DEMAND PAGING SEAM ---
+    // Check if the page is resident. If not, fault!
+    if (pageAccessHandler && !pageAccessHandler(address)) {
+        return MemoryStatus::PAGE_FAULT; 
     }
 
     outValue = processMemory.readWord(address);
@@ -160,6 +170,12 @@ MemoryStatus Process::writeMemory(size_t address, uint16_t value) {
     if (!processMemory.isValidWordAddress(address)) {
         raiseAccessViolation(address);
         return MemoryStatus::VIOLATION;
+    }
+
+    // --- DEMAND PAGING SEAM ---
+    // Check if the page is resident. If not, fault!
+    if (pageAccessHandler && !pageAccessHandler(address)) {
+        return MemoryStatus::PAGE_FAULT;
     }
 
     processMemory.writeWord(address, value);

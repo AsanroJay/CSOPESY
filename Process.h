@@ -13,6 +13,8 @@
 #include "ProcessMemory.h"
 #include "SymbolTable.h"
 
+#include <functional> // Add this include
+
 // Outcome of any instruction step that touches process memory.
 //
 // PAGE_FAULT is never returned today -- Process owns only the virtual address
@@ -25,6 +27,8 @@ enum class MemoryStatus {
     VIOLATION,   // address outside the process's memory; the process is dead
     IGNORED,     // symbol table segment is full, so the declaration is skipped
 };
+
+using PageAccessHandler = std::function<bool(size_t)>;
 
 class Process {
 public:
@@ -92,6 +96,9 @@ public:
     std::string getInvalidAddress() const;
     void raiseAccessViolation(size_t address);
 
+    // Inject the memory manager's access function
+    void setPageAccessHandler(PageAccessHandler handler);
+
 private:
     // Resolves `name` to its address in the symbol table segment, claiming a
     // slot if needed. False when the 32-variable limit is already reached.
@@ -126,4 +133,6 @@ private:
     std::atomic<bool> memoryViolation{false};
     std::string violationTime;
     std::string invalidAddress;
+
+    PageAccessHandler pageAccessHandler;
 };

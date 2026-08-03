@@ -14,6 +14,7 @@ PagingAllocator::PagingAllocator(size_t maxMemory, size_t frameSize)
       physicalMemory(maxMemory, 0),
       frameOwners(numFrames),
       nextAllocId(1),
+      internalClock(0),
       numPagedIn(0),
       numPagedOut(0) {
     memoryAllocatorType  = PAGING;
@@ -25,16 +26,6 @@ PagingAllocator::PagingAllocator(size_t maxMemory, size_t frameSize)
     }
 }
 
-void* PagingAllocator::frameToPointer(size_t frameIndex) {
-    return static_cast<void*>(physicalMemory.data() + frameIndex * frameSize);
-}
-
-size_t PagingAllocator::pointerToFrame(void* ptr) const {
-    const char* base = physicalMemory.data();
-    return (static_cast<char*>(ptr) - base) / frameSize;
-}
-
-
 void* PagingAllocator::allocate(size_t size) {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -45,71 +36,92 @@ void* PagingAllocator::allocate(size_t size) {
         return nullptr;  
     }
 
-    // --- PAGE REPLACEMENT LOGIC ---
-    // If we don't have enough free frames, evict pages to the backing store
-    while (freeFrameList.size() < numFramesNeeded) {
-        bool evicted = false;
-        
-        // Simple First-Found Eviction (You can upgrade this to LRU/FIFO later if desired)
-        for (size_t i = 0; i < numFrames; ++i) {
-            if (frameOwners[i].allocId != -1) {
-                int victimAllocId = frameOwners[i].allocId;
-                size_t victimPage = frameOwners[i].pageIndex;
-
-                // 1. Page out to backing store (Increments numPagedOut)
-                pageOutFrame(i, victimAllocId, victimPage);
-
-                // 2. Invalidate the victim's page table entry
-                for (auto& pair : allocations) {
-                    if (pair.second.ownerId == victimAllocId) {
-                        pair.second.pageTable[victimPage].valid = false;
-                        pair.second.pageTable[victimPage].frameNumber = -1;
-                        break;
-                    }
-                }
-
-                // 3. Reclaim the physical frame
-                frameOwners[i].allocId = -1;
-                freeFrameList.push_back(i);
-                currentAllocatedSize -= frameSize; // Deduct from physical RAM usage
-                
-                evicted = true;
-                break; 
-            }
-        }
-        
-        if (!evicted) return nullptr; // Absolute failsafe
-    }
-
-    // --- STANDARD ALLOCATION ---
+    // --- VIRTUAL ALLOCATION ONLY ---
+    // Do not pop from the free frame list here. Just map the virtual space.
     int allocId = nextAllocId++;
     Allocation alloc;
     alloc.ownerId = allocId;
     alloc.size    = size;
     alloc.pageTable.resize(numFramesNeeded);
-
-    size_t firstFrame = 0;
+    
     for (size_t page = 0; page < numFramesNeeded; ++page) {
-        size_t frame = freeFrameList.back();
-        freeFrameList.pop_back();
-
-        PageTableEntry& pte = alloc.pageTable[page];
-        pte.frameNumber = static_cast<int>(frame);
-        pte.valid       = true;   
-        pte.dirty       = false;
-
-        frameOwners[frame] = FrameOwner{allocId, page};
-        if (page == 0) firstFrame = frame;
-        
-        // 4. Trigger page-in counter for the new frames being brought into RAM
-        pageInFrame(frame, allocId, page);
+        alloc.pageTable[page].frameNumber = -1;
+        alloc.pageTable[page].valid = false;
+        alloc.pageTable[page].dirty = false;
     }
 
-    currentAllocatedSize += numFramesNeeded * frameSize;
-
-    void* handle = frameToPointer(firstFrame);
+    // We use the allocId as a virtual handle instead of a raw physical pointer
+    void* handle = reinterpret_cast<void*>(static_cast<uintptr_t>(allocId));
     allocations[handle] = std::move(alloc);
+    
     return handle;
+}
+
+bool PagingAllocator::accessPage(void* handle, size_t pageIndex) {
+    std::lock_guard<std::mutex> lock(mutex);
+    internalClock++;
+
+    auto it = allocations.find(handle);
+    if (it == allocations.end() || pageIndex >= it->second.pageTable.size()) {
+        return false; // Out of bounds or invalid handle
+    }
+
+    PageTableEntry& pte = it->second.pageTable[pageIndex];
+
+    // 1. PAGE HIT: The page is already resident in a physical frame.
+    if (pte.valid) {
+        frameOwners[pte.frameNumber].lastAccess = internalClock;
+        return true; 
+    }
+
+    // 2. PAGE FAULT: The page is virtual. Assign a physical frame.
+    size_t frameToUse = 0;
+
+    if (!freeFrameList.empty()) {
+        frameToUse = freeFrameList.back();
+        freeFrameList.pop_back();
+    } else {
+        // --- LRU PAGE REPLACEMENT ---
+        size_t lruFrame = 0;
+        uint64_t oldestAccess = UINT64_MAX;
+
+        for (size_t i = 0; i < numFrames; ++i) {
+            if (frameOwners[i].allocId != -1 && frameOwners[i].lastAccess < oldestAccess) {
+                oldestAccess = frameOwners[i].lastAccess;
+                lruFrame = i;
+            }
+        }
+
+        frameToUse = lruFrame;
+        int victimAllocId = frameOwners[frameToUse].allocId;
+        size_t victimPage = frameOwners[frameToUse].pageIndex;
+
+        // Page out the victim to the backing store
+        pageOutFrame(frameToUse, victimAllocId, victimPage);
+
+        // Invalidate the victim's PTE using their handle
+        void* victimHandle = reinterpret_cast<void*>(static_cast<uintptr_t>(victimAllocId));
+        auto victimIt = allocations.find(victimHandle);
+        if (victimIt != allocations.end()) {
+            victimIt->second.pageTable[victimPage].valid = false;
+            victimIt->second.pageTable[victimPage].frameNumber = -1;
+        }
+        
+        currentAllocatedSize -= frameSize;
+    }
+
+    // Assign the selected frame to our faulting page
+    pte.frameNumber = static_cast<int>(frameToUse);
+    pte.valid = true;
+    pte.dirty = false;
+
+    frameOwners[frameToUse] = {it->second.ownerId, pageIndex, internalClock};
+    pageInFrame(frameToUse, it->second.ownerId, pageIndex);
+    
+    currentAllocatedSize += frameSize;
+
+    // Return false to signify a fault occurred (so the instruction restarts)
+    return false;
 }
 
 void PagingAllocator::deallocate(void* ptr) {
@@ -120,14 +132,17 @@ void PagingAllocator::deallocate(void* ptr) {
     if (it == allocations.end()) return;  // not one of ours / already freed
 
     Allocation& alloc = it->second;
+    
+    // Only free pages that were actively loaded into physical frames
     for (const PageTableEntry& pte : alloc.pageTable) {
-        if (pte.frameNumber < 0) continue;  // page currently swapped out
-        size_t frame = static_cast<size_t>(pte.frameNumber);
-        frameOwners[frame] = FrameOwner{};   // mark free
-        freeFrameList.push_back(frame);
+        if (pte.valid && pte.frameNumber >= 0) {
+            size_t frame = static_cast<size_t>(pte.frameNumber);
+            frameOwners[frame] = FrameOwner{};   // mark free
+            freeFrameList.push_back(frame);
+            currentAllocatedSize -= frameSize;
+        }
     }
 
-    currentAllocatedSize -= alloc.pageTable.size() * frameSize;
     allocations.erase(it);
 }
 

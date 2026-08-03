@@ -81,3 +81,22 @@ size_t MemoryManager::getNumPagedOut() const {
     }
     return 0;
 }
+
+bool MemoryManager::accessPage(int pid, size_t virtualAddress) {
+    std::lock_guard<std::mutex> lock(mutex);
+    
+    auto it = processBlocks.find(pid);
+    if (it == processBlocks.end()) {
+        return false; // Process memory not allocated
+    }
+
+    // Convert the raw byte address into a page index
+    size_t pageIndex = virtualAddress / memPerFrame;
+    
+    if (auto paging = dynamic_cast<PagingAllocator*>(allocator.get())) {
+        // This triggers the LRU and demand paging logic we just wrote
+        return paging->accessPage(it->second, pageIndex);
+    }
+    
+    return true; 
+}

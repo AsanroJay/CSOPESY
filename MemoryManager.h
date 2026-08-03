@@ -35,6 +35,10 @@ public:
     size_t getNumPagedIn() const;
     size_t getNumPagedOut() const;
 
+    // The access seam: Converts a raw virtual address to a page index.
+    // Returns true if the page is resident, false if it page-faulted.
+    bool accessPage(int pid, size_t virtualAddress);
+
 private:
     int maxOverallMem;
     int memPerFrame;
