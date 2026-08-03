@@ -71,3 +71,8 @@ Testing/
 #memory stamps and process texts
 memory_stamp_*.txt
 p*.txt
+
+# runtime output produced by the emulator
+process_logs/
+memory_snapshots/
+csopesy-backing-store.txt

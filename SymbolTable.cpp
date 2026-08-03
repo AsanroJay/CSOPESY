@@ -1,32 +1,42 @@
 #include "SymbolTable.h"
 
-void SymbolTable::declareVariable(const std::string& name, uint16_t initialValue) {
-    std::lock_guard<std::mutex> lock(tableMutex);
-    // Overwrites if it exists, inserts a new pair if it doesn't
-    table[name] = initialValue;
-}
+bool SymbolTable::addressOf(const std::string& name, size_t& outAddress) {
+    std::lock_guard<std::mutex> lock(mutex);
 
-uint16_t SymbolTable::getVariable(const std::string& name) {
-    std::lock_guard<std::mutex> lock(tableMutex);
-    
-    auto it = table.find(name);
-    if (it == table.end()) {
-        // Fallback: Implicitly declare with a value of 0 if missing [cite: 50]
-        table[name] = 0;
-        return 0;
+    auto it = slots.find(name);
+    if (it != slots.end()) {
+        outAddress = it->second * BYTES_PER_VARIABLE;
+        return true;
     }
-    return it->second;
+
+    // Segment is full: the spec says succeeding declarations are ignored.
+    if (slots.size() >= MAX_VARIABLES) {
+        return false;
+    }
+
+    size_t slot = slots.size();
+    slots[name] = slot;
+    outAddress  = slot * BYTES_PER_VARIABLE;
+    return true;
 }
 
-void SymbolTable::setVariable(const std::string& name, uint32_t value) {
-    std::lock_guard<std::mutex> lock(tableMutex);
-    
-    // Clamp values strictly between (0, max(uint16)) [cite: 52]
-    uint32_t clampedValue = std::clamp<uint32_t>(
-        value, 
-        0u, 
-        static_cast<uint32_t>(std::numeric_limits<uint16_t>::max())
-    );
-    
-    table[name] = static_cast<uint16_t>(clampedValue);
+bool SymbolTable::find(const std::string& name, size_t& outAddress) const {
+    std::lock_guard<std::mutex> lock(mutex);
+
+    auto it = slots.find(name);
+    if (it == slots.end()) {
+        return false;
+    }
+    outAddress = it->second * BYTES_PER_VARIABLE;
+    return true;
+}
+
+bool SymbolTable::isFull() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    return slots.size() >= MAX_VARIABLES;
+}
+
+size_t SymbolTable::count() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    return slots.size();
 }

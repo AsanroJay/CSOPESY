@@ -21,12 +21,12 @@ namespace {
         if (value > maxValue) return maxValue;
         if ((value & (value - 1)) == 0) return value;
 
-        int roundedDown = 1;
-        while (roundedDown < value) {
-            roundedDown <<= 1;
+        int roundedUp = 1;
+        while (roundedUp < value) {
+            roundedUp <<= 1;
         }
-        
-        return roundedDown;
+
+        return roundedUp;
     }
 }
 
@@ -115,13 +115,63 @@ bool Config::loadFromFile(const std::string& path) {
                 }
                 Config::maxOverallMem = normalizedValue;
             }
+        } else if (key == "mem-per-frame") {
+            int parsedValue = 0;
+            if (iss >> parsedValue) {
+                const int normalizedValue = clampToPowerOfTwoRange(parsedValue);
+                if (normalizedValue != parsedValue) {
+                    std::cerr << "Warning: \"mem-per-frame\" must be a power of 2 between 64 and 65536 bytes; using " << normalizedValue << " instead.\n";
+                }
+                Config::memPerFrame = normalizedValue;
+            }
         } else if (key == "min-mem-per-proc") {
-            iss >> Config::minMemPerProc;
+            int parsedValue = 0;
+            if (iss >> parsedValue) {
+                const int normalizedValue = clampToPowerOfTwoRange(parsedValue);
+                if (normalizedValue != parsedValue) {
+                    std::cerr << "Warning: \"min-mem-per-proc\" must be a power of 2 between 64 and 65536 bytes; using " << normalizedValue << " instead.\n";
+                }
+                Config::minMemPerProc = static_cast<size_t>(normalizedValue);
+            }
         } else if (key == "max-mem-per-proc") {
-            iss >> Config::maxMemPerProc;
+            int parsedValue = 0;
+            if (iss >> parsedValue) {
+                const int normalizedValue = clampToPowerOfTwoRange(parsedValue);
+                if (normalizedValue != parsedValue) {
+                    std::cerr << "Warning: \"max-mem-per-proc\" must be a power of 2 between 64 and 65536 bytes; using " << normalizedValue << " instead.\n";
+                }
+                Config::maxMemPerProc = static_cast<size_t>(normalizedValue);
+            }
         } else {
             std::cerr << "Warning: unknown config key \"" << key << "\" (ignored).\n";
         }
+    }
+
+    // Cross-parameter sanity checks. These matter because the page arithmetic
+    // (page = address / mem-per-frame, frames = max-overall-mem / mem-per-frame)
+    // silently produces nonsense when the values are inconsistent.
+    if (Config::memPerFrame > Config::maxOverallMem) {
+        std::cerr << "Warning: \"mem-per-frame\" (" << Config::memPerFrame
+                  << ") exceeds \"max-overall-mem\" (" << Config::maxOverallMem
+                  << "); using " << Config::maxOverallMem << " instead.\n";
+        Config::memPerFrame = Config::maxOverallMem;
+    }
+    // A process larger than all of physical memory could never become fully
+    // resident, so it would sit in the ready queue forever. Cap it instead.
+    if (Config::maxMemPerProc > static_cast<size_t>(Config::maxOverallMem)) {
+        std::cerr << "Warning: \"max-mem-per-proc\" (" << Config::maxMemPerProc
+                  << ") exceeds \"max-overall-mem\" (" << Config::maxOverallMem
+                  << "); using " << Config::maxOverallMem << " instead.\n";
+        Config::maxMemPerProc = static_cast<size_t>(Config::maxOverallMem);
+    }
+    if (Config::minMemPerProc > static_cast<size_t>(Config::maxOverallMem)) {
+        Config::minMemPerProc = static_cast<size_t>(Config::maxOverallMem);
+    }
+    if (Config::minMemPerProc > Config::maxMemPerProc) {
+        std::cerr << "Warning: \"min-mem-per-proc\" (" << Config::minMemPerProc
+                  << ") exceeds \"max-mem-per-proc\" (" << Config::maxMemPerProc
+                  << "); swapping them.\n";
+        std::swap(Config::minMemPerProc, Config::maxMemPerProc);
     }
 
     Config::initialized = true;

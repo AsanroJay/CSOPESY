@@ -145,17 +145,15 @@ int main() {
                     } else if (scheduler->findProcess(processName)) {
                         cout << "Process " << processName << " already exists.\n";
                     } else {
-                        // Count instructions separated by semicolon
-                        size_t insCount = 1;
-                        for (char c : instructions) {
-                            if (c == ';') insCount++;
-                        }
-                        
-                        // Enforce 1-50 instructions limit[cite: 1]
-                        if (insCount < 1 || insCount > 50) {
+                        // The parser enforces the 1-50 instruction limit and
+                        // rejects anything it cannot turn into a command.
+                        std::string parseError;
+                        auto process = scheduler->createCustomProcess(processName, memSize,
+                                                                      instructions, parseError);
+                        if (!process) {
                             cout << "invalid command\n"; // Spec requirement[cite: 1]
+                            cout << "  (" << parseError << ")\n";
                         } else {
-                            auto process = scheduler->createCustomProcess(processName, memSize, instructions);
                             process->attachScreen();
                             displayProcessScreen(*process);
                         }
@@ -278,7 +276,11 @@ void displayProcessScreen(Process& process) {
         }
         
         // Only print execution status metrics if the process isn't finished yet
-        if (!p.isFinished()) {
+        if (p.isTerminated()) {
+            std::cout << "\nProcess " << p.getName()
+                      << " shut down due to memory access violation error that occurred at "
+                      << p.getViolationTime() << ". " << p.getInvalidAddress() << " invalid.\n";
+        } else if (!p.isFinished()) {
             std::cout << "\nCurrent instruction line: " << p.getCurrentLine() << "\n";
             std::cout << "Lines of code: "            << p.getTotalLines() << "\n";
         } else {

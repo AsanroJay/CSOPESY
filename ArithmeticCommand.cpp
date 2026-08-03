@@ -1,4 +1,5 @@
 #include "ArithmeticCommand.h"
+
 #include "Process.h"
 
 ArithmeticCommand::ArithmeticCommand(CommandType type,
@@ -10,44 +11,65 @@ ArithmeticCommand::ArithmeticCommand(CommandType type,
       leftOperand(std::move(left)),
       rightOperand(std::move(right)) {}
 
-static uint16_t resolveOperand(const ArithmeticCommand::Operand& operand, Process& process) {
+// Resolves one operand. Variable operands read from the symbol table segment,
+// which can page-fault; `status` reports that back to the caller.
+static uint16_t resolveOperand(const ArithmeticCommand::Operand& operand,
+                               Process& process,
+                               MemoryStatus& status) {
     if (operand.mode == ArithmeticCommand::VARIABLE) {
-        return process.getVariable(operand.name);
+        uint16_t value = 0;
+        status = process.readVariable(operand.name, value);
+        return value;
     }
+    status = MemoryStatus::OK;
     return operand.literalValue;
 }
 
 bool ArithmeticCommand::execute(int coreId, Process& process) {
-    // 1. Resolve both operands (implicitly handles fallback initialization to 0 if variable is new)
-    uint32_t leftValue  = resolveOperand(leftOperand, process);
-    uint32_t rightValue = resolveOperand(rightOperand, process);
-    uint32_t result     = 0;
+    MemoryStatus status = MemoryStatus::OK;
 
-    // 2. Perform operation
+    // Nothing is written until both operands resolve, so restarting after a
+    // fault simply re-reads them -- the instruction stays idempotent.
+    uint32_t leftValue = resolveOperand(leftOperand, process, status);
+    if (status == MemoryStatus::PAGE_FAULT) return false;
+    if (status == MemoryStatus::VIOLATION)  return true;
+
+    uint32_t rightValue = resolveOperand(rightOperand, process, status);
+    if (status == MemoryStatus::PAGE_FAULT) return false;
+    if (status == MemoryStatus::VIOLATION)  return true;
+
+    uint32_t result = 0;
     if (commandType == ICommand::ADD) {
         result = leftValue + rightValue;
     } else {
-        // Underflow protection: specification implies clamping between (0, max(uint16))
+        // Underflow protection: uint16 values are clamped to [0, 65535].
         result = leftValue > rightValue ? leftValue - rightValue : 0;
     }
 
-    // 3. Save result to destination (setVariable automatically handles uint16 bounds clamping)
-    process.setVariable(destination, result);
+    status = process.writeVariable(destination, result);
+    if (status == MemoryStatus::PAGE_FAULT) return false;
+    if (status == MemoryStatus::VIOLATION)  return true;
 
-    // 4. Construct log layout
+    std::string opName = (commandType == ICommand::ADD) ? "ADD" : "SUBTRACT";
+
+    if (status == MemoryStatus::IGNORED) {
+        process.logPrint(coreId, opName + ": " + destination + " ignored (symbol table full)");
+        return true;
+    }
+
     auto operandToString = [&](const ArithmeticCommand::Operand& op, uint16_t val) {
         if (op.mode == ArithmeticCommand::VARIABLE) return op.name + "(" + std::to_string(val) + ")";
         return std::to_string(val);
     };
 
-    std::string opName   = (commandType == ICommand::ADD) ? "ADD" : "SUBTRACT";
     std::string sign     = (commandType == ICommand::ADD) ? "+" : "-";
     std::string leftStr  = operandToString(leftOperand, static_cast<uint16_t>(leftValue));
     std::string rightStr = operandToString(rightOperand, static_cast<uint16_t>(rightValue));
-    
+
+    uint16_t clamped = static_cast<uint16_t>(result > 65535u ? 65535u : result);
+
     // Format: ADD: x = y(10) + z(5) -> 15
-    std::string message = opName + ": " + destination + " = " + leftStr + " " + sign + " " + rightStr + " -> " + std::to_string(process.getVariable(destination));
-    process.logPrint(coreId, message);
-    
+    process.logPrint(coreId, opName + ": " + destination + " = " + leftStr + " " + sign + " " +
+                                 rightStr + " -> " + std::to_string(clamped));
     return true;
 }

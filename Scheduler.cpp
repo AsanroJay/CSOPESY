@@ -11,9 +11,12 @@
 #include "Config.h"
 #include "DeclareCommand.h"
 #include "ForCommand.h"
+#include "InstructionParser.h"
 #include "PrintCommand.h"
+#include "ReadCommand.h"
 #include "SleepCommand.h"
 #include "Utils.h"
+#include "WriteCommand.h"
 #include <filesystem>
 
 static std::mt19937& getRng() {
@@ -40,76 +43,95 @@ static ArithmeticCommand::Operand makeRandomOperand(const std::vector<std::strin
     return {ArithmeticCommand::LITERAL, std::string(), static_cast<uint16_t>(randomInt(0, 100))};
 }
 
+// Picks a 2-byte-aligned address inside the process's data region, i.e. past
+// the 64-byte symbol table segment and far enough from the end to hold a uint16.
+// False when the process is too small to have a data region at all.
+static bool pickDataAddress(size_t memorySize, size_t& outAddress) {
+    constexpr size_t base = ProcessMemory::SYMBOL_TABLE_BYTES;
+    constexpr size_t word = ProcessMemory::BYTES_PER_VARIABLE;
+
+    if (memorySize < base + word) return false;
+
+    size_t lastAddress = memorySize - word;
+    size_t slots       = (lastAddress - base) / word;
+    outAddress = base + static_cast<size_t>(randomInt(0, static_cast<int>(slots))) * word;
+    return true;
+}
+
 static std::shared_ptr<ICommand> makeRandomInstruction(const std::string& processName,
                                                       const std::vector<std::string>& variableNames,
+                                                      size_t memorySize,
                                                       int depth);
 
 static std::vector<std::shared_ptr<ICommand>> makeRandomCommandBlock(const std::string& processName,
                                                                      const std::vector<std::string>& variableNames,
+                                                                     size_t memorySize,
                                                                      int depth,
                                                                      size_t count) {
     std::vector<std::shared_ptr<ICommand>> commands;
     commands.reserve(count);
     for (size_t i = 0; i < count; ++i) {
-        commands.push_back(makeRandomInstruction(processName, variableNames, depth));
+        commands.push_back(makeRandomInstruction(processName, variableNames, memorySize, depth));
     }
     return commands;
 }
 
 static std::shared_ptr<ICommand> makeRandomInstruction(const std::string& processName,
                                                       const std::vector<std::string>& variableNames,
+                                                      size_t memorySize,
                                                       int depth) {
     constexpr int maxForNestingDepth = 3;
 
-    if (depth >= maxForNestingDepth) {
-        int choice = randomInt(1, 90);
-        if (choice <= 30) {
-            return std::make_shared<PrintCommand>("Hello world from " + processName + "!");
-        }
-        if (choice <= 45) {
-            return std::make_shared<DeclareCommand>(chooseVarName(variableNames), static_cast<uint16_t>(randomInt(0, 65535)));
-        }
-        if (choice <= 65) {
-            return std::make_shared<ArithmeticCommand>(ICommand::ADD,
-                                                       chooseVarName(variableNames),
-                                                       makeRandomOperand(variableNames),
-                                                       makeRandomOperand(variableNames));
-        }
-        if (choice <= 80) {
-            return std::make_shared<ArithmeticCommand>(ICommand::SUBTRACT,
-                                                       chooseVarName(variableNames),
-                                                       makeRandomOperand(variableNames),
-                                                       makeRandomOperand(variableNames));
-        }
-        return std::make_shared<SleepCommand>(randomInt(1, 5));
-    }
+    // FOR is only offered while there is nesting budget left; the roll is
+    // narrowed rather than reshuffled so the other weights stay put.
+    const bool allowFor = depth < maxForNestingDepth && depth < 2;
+    int choice = randomInt(1, allowFor ? 100 : 94);
 
-    int choice = randomInt(1, depth >= 2 ? 85 : 100);
-    if (choice <= 30) {
+    if (choice <= 22) {
         return std::make_shared<PrintCommand>("Hello world from " + processName + "!");
     }
-    if (choice <= 45) {
-        return std::make_shared<DeclareCommand>(chooseVarName(variableNames), static_cast<uint16_t>(randomInt(0, 65535)));
+    if (choice <= 36) {
+        return std::make_shared<DeclareCommand>(chooseVarName(variableNames),
+                                                static_cast<uint16_t>(randomInt(0, 65535)));
     }
-    if (choice <= 65) {
+    if (choice <= 52) {
         return std::make_shared<ArithmeticCommand>(ICommand::ADD,
                                                    chooseVarName(variableNames),
                                                    makeRandomOperand(variableNames),
                                                    makeRandomOperand(variableNames));
     }
-    if (choice <= 80) {
+    if (choice <= 64) {
         return std::make_shared<ArithmeticCommand>(ICommand::SUBTRACT,
                                                    chooseVarName(variableNames),
                                                    makeRandomOperand(variableNames),
                                                    makeRandomOperand(variableNames));
     }
-    if (choice <= 90) {
+
+    // Memory access instructions. Generated addresses always stay inside the
+    // process's own space, so scheduler-made processes never fault fatally.
+    size_t address = 0;
+    if (choice <= 76 && pickDataAddress(memorySize, address)) {
+        WriteCommand::Operand operand{};
+        if (!variableNames.empty() && randomChance(50)) {
+            operand.isVariable = true;
+            operand.name       = chooseVarName(variableNames);
+        } else {
+            operand.isVariable   = false;
+            operand.literalValue = static_cast<uint16_t>(randomInt(0, 65535));
+        }
+        return std::make_shared<WriteCommand>(address, operand);
+    }
+    if (choice <= 88 && pickDataAddress(memorySize, address)) {
+        return std::make_shared<ReadCommand>(chooseVarName(variableNames), address);
+    }
+    if (choice <= 94) {
         return std::make_shared<SleepCommand>(randomInt(1, 5));
     }
 
     int innerCount = randomInt(1, 3);
-    int repeats = randomInt(2, 5);
-    return std::make_shared<ForCommand>(makeRandomCommandBlock(processName, variableNames, depth + 1, innerCount), repeats);
+    int repeats    = randomInt(2, 5);
+    return std::make_shared<ForCommand>(
+        makeRandomCommandBlock(processName, variableNames, memorySize, depth + 1, innerCount), repeats);
 }
 
 Scheduler::Scheduler(int numCores, std::shared_ptr<std::atomic<uint64_t>> externalClock)
@@ -196,33 +218,18 @@ void Scheduler::runSingleCycleStep() {
 
         int pid = nextPid.fetch_add(1);
         std::string name = "p" + zeroPad(pid, 2);
-        auto process = std::make_shared<Process>(pid, name);
 
         // --- POWER OF 2 MEMORY GENERATOR ---
-        static std::mt19937 rng(std::random_device{}());
-        
-        // Calculate the base-2 exponents for the min and max bounds
+        // Roll an exponent between min-mem-per-proc and max-mem-per-proc so the
+        // result is always a power of 2, per the spec.
         int minExp = static_cast<int>(std::log2(Config::minMemPerProc));
         int maxExp = static_cast<int>(std::log2(Config::maxMemPerProc));
-        
-        // Roll a random exponent and convert it back to a power of 2
-        std::uniform_int_distribution<int> memDist(minExp, maxExp);
-        size_t rolledMem = 1ULL << memDist(rng); 
-        
-        process->setMemorySize(rolledMem);
+        if (maxExp < minExp) std::swap(minExp, maxExp);
 
-        // --- RANDOMIZED INSTRUCTIONS ---
-        std::uniform_int_distribution<uint64_t> dist(Config::minIns, Config::maxIns);
-        size_t totalIns = static_cast<size_t>(dist(rng));
+        size_t rolledMem = size_t{1} << randomInt(minExp, maxExp);
 
-        // Build a list of candidate variable names for randomized instructions
-        std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
-
-        // Populate the process with a randomized block of instructions
-        auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
-        for (auto& cmd : commands) {
-            process->addCommand(cmd);
-        }
+        auto process = std::make_shared<Process>(pid, name, rolledMem);
+        populateRandomInstructions(process);
 
         {
             std::lock_guard<std::mutex> lock(allProcMutex);
@@ -237,10 +244,10 @@ void Scheduler::runSingleCycleStep() {
     // B. Dispatcher: assign ready processes to free cores.
     //
     // A process must hold memory before it can run. If it isn't resident yet we
-    // attempt a first-fit allocation; when memory is full the process reverts to
-    // the TAIL of the ready queue (no backing store) and the core is left idle
-    // for this cycle. We bound the retries per core to the queue length so a
-    // fully-occupied memory doesn't spin.
+    // attempt an allocation; when memory is full the process reverts to the
+    // TAIL of the ready queue and the core is left idle for this cycle. We
+    // bound the retries per core to the queue length so a fully-occupied memory
+    // doesn't spin.
     {
         std::lock_guard<std::mutex> queueLock(queueMutex);
         for (int i = 0; i < numCores; ++i) {
@@ -252,6 +259,8 @@ void Scheduler::runSingleCycleStep() {
             while (attempts-- > 0 && !readyQueue.empty()) {
                 auto process = readyQueue.front();
                 readyQueue.pop();
+
+                if (process->isFinished()) continue;  // finished or shut down
 
                 if (!memory.isAllocated(process->getPID())) {
                     int base = memory.allocate(process->getPID(), process->getMemorySize());
@@ -384,11 +393,12 @@ void Scheduler::workerLoop(int coreId) {
             
             // 6. Post-execution Lifecycle Clean up
             if (process->isFinished()) {
-                // Wrap up file handles and update state to FINISHED
+                // Wrap up file handles and update state (FINISHED, or left as
+                // TERMINATED when an access violation shut the process down).
                 process->finishExecution();
 
-                // Release its memory back to the allocator (only finished
-                // processes free memory; preempted ones stay resident).
+                // Release its memory back to the allocator (only processes that
+                // are done free memory; preempted ones stay resident).
                 memory.deallocate(process->getPID());
 
                 // Relinquish the core slot instantly so the dispatcher can cycle in a fresh process
@@ -422,23 +432,26 @@ std::shared_ptr<Process> Scheduler::findProcess(const std::string& name) {
     return nullptr;
 }
 
-std::shared_ptr<Process> Scheduler::createProcess(const std::string& name, size_t memorySize) {
-    int pid = nextPid.fetch_add(1);
-    auto process = std::make_shared<Process>(pid, name);
-    
-    // Ensure memory size is set to the process
-    process->setMemorySize(memorySize);
+void Scheduler::populateRandomInstructions(const std::shared_ptr<Process>& process) {
+    uint64_t minIns = Config::minIns;
+    uint64_t maxIns = Config::maxIns;
+    if (maxIns < minIns) std::swap(minIns, maxIns);
 
-    // RANDOMIZED INSTRUCTIONS
-    static std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<uint64_t> dist(Config::minIns, Config::maxIns);
-    size_t totalIns = static_cast<size_t>(dist(rng));
+    size_t totalIns = static_cast<size_t>(randomInt(static_cast<int>(minIns), static_cast<int>(maxIns)));
 
     std::vector<std::string> variableNames = {"x", "y", "z", "i", "j", "k"};
-    auto commands = makeRandomCommandBlock(name, variableNames, 0, totalIns);
+    auto commands = makeRandomCommandBlock(process->getName(), variableNames,
+                                           process->getMemorySize(), 0, totalIns);
     for (auto& cmd : commands) {
         process->addCommand(cmd);
     }
+}
+
+std::shared_ptr<Process> Scheduler::createProcess(const std::string& name, size_t memorySize) {
+    int pid = nextPid.fetch_add(1);
+    auto process = std::make_shared<Process>(pid, name, memorySize);
+
+    populateRandomInstructions(process);
 
     {
         std::lock_guard<std::mutex> lock(allProcMutex);
@@ -452,14 +465,21 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name, size_
     return process;
 }
 
-std::shared_ptr<Process> Scheduler::createCustomProcess(const std::string& name, size_t memorySize, const std::string& instructions) {
+std::shared_ptr<Process> Scheduler::createCustomProcess(const std::string& name,
+                                                        size_t memorySize,
+                                                        const std::string& instructions,
+                                                        std::string& outError) {
+    std::vector<std::shared_ptr<ICommand>> commands;
+    if (!InstructionParser::parse(instructions, commands, outError)) {
+        return nullptr;
+    }
+
     int pid = nextPid.fetch_add(1);
-    auto process = std::make_shared<Process>(pid, name);
-    process->setMemorySize(memorySize);
-    
-    // TODO: Parse the `instructions` string (split by ';') and convert them 
-    // into actual ICommand objects via your Command parsing logic, then call:
-    // process->addCommand(parsedCommand);
+    auto process = std::make_shared<Process>(pid, name, memorySize);
+
+    for (auto& command : commands) {
+        process->addCommand(command);
+    }
 
     {
         std::lock_guard<std::mutex> lock(allProcMutex);
@@ -507,6 +527,16 @@ void Scheduler::printStatus(std::ostream& os) {
                << "Finished   "
                << process->getTotalLines() << " / " << process->getTotalLines()
                << "\n";
+        }
+    }
+
+    os << "\nTerminated processes (memory access violation):\n";
+    for (const auto& process : allProcesses) {
+        if (process->isTerminated()) {
+            os << std::left << std::setw(12) << process->getName()
+               << "(" << process->getCreatedAt() << ")  "
+               << "Shut down at " << process->getViolationTime()
+               << "   " << process->getInvalidAddress() << " invalid\n";
         }
     }
 

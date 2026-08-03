@@ -13,7 +13,9 @@ public:
         ADD,
         SUBTRACT,
         SLEEP,
-        FOR
+        FOR,
+        READ,
+        WRITE
     };
 
     explicit ICommand(CommandType type) : commandType(type) {}
@@ -23,7 +25,8 @@ public:
 
     // Executes this instruction on the given CPU core.
     // Returns true when the instruction is complete and the process can
-    // advance to the next top-level command.
+    // advance to the next top-level command. Returning false means the
+    // instruction took a page fault and must be restarted on the next tick.
     virtual bool execute(int coreId, Process& process) = 0;
 
 protected:
