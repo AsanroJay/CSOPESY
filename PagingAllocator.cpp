@@ -188,3 +188,17 @@ String PagingAllocator::visualizeMemory() {
     }
     return out.str();
 }
+
+size_t PagingAllocator::getProcessResidentMemory(void* handle) const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mutex));
+    auto it = allocations.find(handle);
+    if (it == allocations.end()) return 0;
+
+    size_t residentPages = 0;
+    for (const auto& pte : it->second.pageTable) {
+        if (pte.valid) {
+            residentPages++;
+        }
+    }
+    return residentPages * frameSize;
+}

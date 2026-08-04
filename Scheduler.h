@@ -49,6 +49,8 @@ public:
     size_t getPagedOut() const;
     std::vector<std::shared_ptr<Process>> getRunningProcesses();
 
+    size_t getProcessResidentMemory(int pid);
+
 private:
     void workerLoop(int coreId);
 

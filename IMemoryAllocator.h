@@ -25,6 +25,9 @@ public:
 
     // --- NEW: Add the virtual access seam here ---
    virtual bool accessPage(void* handle, size_t pageIndex) { return true; }
+
+   // For process-smi
+   virtual size_t getProcessResidentMemory(void* handle) const { return 0; }
 protected:
     MemoryAllocatorType memoryAllocatorType;
     struct MemoryBlock {

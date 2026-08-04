@@ -606,3 +606,7 @@ std::vector<std::shared_ptr<Process>> Scheduler::getRunningProcesses() {
     }
     return running;
 }
+
+size_t Scheduler::getProcessResidentMemory(int pid) {
+    return memory.getProcessResidentMemory(pid);
+}

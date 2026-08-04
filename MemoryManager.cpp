@@ -96,3 +96,14 @@ bool MemoryManager::accessPage(int pid, size_t virtualAddress) {
     
     return true; 
 }
+
+size_t MemoryManager::getProcessResidentMemory(int pid) const {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = processBlocks.find(pid);
+    if (it == processBlocks.end()) return 0;
+
+    if (allocator) {
+        return allocator->getProcessResidentMemory(it->second);
+    }
+    return 0;
+}
