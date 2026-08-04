@@ -69,15 +69,30 @@ size_t MemoryManager::getCurrentAllocatedSize() const {
 }
 
 size_t MemoryManager::getNumPagedIn() const {
-    if (auto paging = dynamic_cast<PagingAllocator*>(allocator.get())) {
-        return paging->getNumPagedIn();
-    }
+    if (allocator) return allocator->getNumPagedIn();
     return 0;
 }
 
 size_t MemoryManager::getNumPagedOut() const {
-    if (auto paging = dynamic_cast<PagingAllocator*>(allocator.get())) {
-        return paging->getNumPagedOut();
-    }
+    if (allocator) return allocator->getNumPagedOut();
     return 0;
+}
+
+bool MemoryManager::accessPage(int pid, size_t virtualAddress) {
+    std::lock_guard<std::mutex> lock(mutex);
+    
+    auto it = processBlocks.find(pid);
+    if (it == processBlocks.end()) {
+        return false; // Process memory not allocated
+    }
+
+    // Convert the raw byte address into a page index
+    size_t pageIndex = virtualAddress / memPerFrame;
+    
+    // Call it directly - no dynamic_cast needed!
+    if (allocator) {
+        return allocator->accessPage(it->second, pageIndex);
+    }
+    
+    return true; 
 }

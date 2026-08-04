@@ -229,6 +229,11 @@ void Scheduler::runSingleCycleStep() {
         size_t rolledMem = size_t{1} << randomInt(minExp, maxExp);
 
         auto process = std::make_shared<Process>(pid, name, rolledMem);
+
+        process->setPageAccessHandler([this, pid](size_t address) {
+            return memory.accessPage(pid, address);
+        });
+        
         populateRandomInstructions(process);
 
         {
@@ -238,6 +243,27 @@ void Scheduler::runSingleCycleStep() {
         {
             std::lock_guard<std::mutex> lock(queueMutex);
             readyQueue.push(process);
+        }
+    }
+
+    
+    // C. RR preemption check — before ticking, check if quantum expired - NEW this is why RR failed last time
+    if (isRR) {
+        for (int i = 0; i < numCores; ++i) {
+            CoreSlot& core = *cores[i];
+            std::lock_guard<std::mutex> coreLock(core.mutex);
+            if (core.current != nullptr && core.quantumTicks >= Config::quantumCycles) {
+                // Preempt: send back to rear of ready queue
+                auto process = core.current;
+                process->setState(Process::READY);
+                process->setCoreId(-1);
+                {
+                    std::lock_guard<std::mutex> queueLock(queueMutex);
+                    readyQueue.push(process);
+                }
+                core.current      = nullptr;
+                core.quantumTicks = 0;
+            }
         }
     }
 
@@ -277,26 +303,6 @@ void Scheduler::runSingleCycleStep() {
                 core.quantumTicks  = 0;
                 core.stepCompleted = false;
                 break;
-            }
-        }
-    }
-
-    // C. RR preemption check — before ticking, check if quantum expired
-    if (isRR) {
-        for (int i = 0; i < numCores; ++i) {
-            CoreSlot& core = *cores[i];
-            std::lock_guard<std::mutex> coreLock(core.mutex);
-            if (core.current != nullptr && core.quantumTicks >= Config::quantumCycles) {
-                // Preempt: send back to rear of ready queue
-                auto process = core.current;
-                process->setState(Process::READY);
-                process->setCoreId(-1);
-                {
-                    std::lock_guard<std::mutex> queueLock(queueMutex);
-                    readyQueue.push(process);
-                }
-                core.current      = nullptr;
-                core.quantumTicks = 0;
             }
         }
     }
@@ -451,6 +457,11 @@ std::shared_ptr<Process> Scheduler::createProcess(const std::string& name, size_
     int pid = nextPid.fetch_add(1);
     auto process = std::make_shared<Process>(pid, name, memorySize);
 
+    // --- NEW: Inject the Demand Paging MMU hook ---
+    process->setPageAccessHandler([this, pid](size_t address) {
+        return memory.accessPage(pid, address);
+    });
+
     populateRandomInstructions(process);
 
     {
@@ -476,6 +487,11 @@ std::shared_ptr<Process> Scheduler::createCustomProcess(const std::string& name,
 
     int pid = nextPid.fetch_add(1);
     auto process = std::make_shared<Process>(pid, name, memorySize);
+
+    // --- NEW: Inject the Demand Paging MMU hook ---
+    process->setPageAccessHandler([this, pid](size_t address) {
+        return memory.accessPage(pid, address);
+    });
 
     for (auto& command : commands) {
         process->addCommand(command);
@@ -527,16 +543,6 @@ void Scheduler::printStatus(std::ostream& os) {
                << "Finished   "
                << process->getTotalLines() << " / " << process->getTotalLines()
                << "\n";
-        }
-    }
-
-    os << "\nTerminated processes (memory access violation):\n";
-    for (const auto& process : allProcesses) {
-        if (process->isTerminated()) {
-            os << std::left << std::setw(12) << process->getName()
-               << "(" << process->getCreatedAt() << ")  "
-               << "Shut down at " << process->getViolationTime()
-               << "   " << process->getInvalidAddress() << " invalid\n";
         }
     }
 

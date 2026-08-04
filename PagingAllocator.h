@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <cstdint>
 
 #include "IMemoryAllocator.h"
 
@@ -23,8 +24,15 @@ public:
     void   deallocate(void* ptr) override;
     String visualizeMemory() override;
 
-    size_t getNumPagedIn() const;
-    size_t getNumPagedOut() const;
+
+    size_t getNumPagedIn() const override;
+    size_t getNumPagedOut() const override;
+
+
+    // The access seam for demand paging.
+    // Returns true if the page was already resident (a hit).
+    // Returns false if a page fault occurred (the page was just loaded into a frame).
+    bool accessPage(void* handle, size_t pageIndex) override;
 
 private:
     struct Allocation {
@@ -34,8 +42,9 @@ private:
     };
 
     struct FrameOwner {
-        int    allocId  = -1;   // -1 == free frame
-        size_t pageIndex = 0;
+        int      allocId   = -1;   // -1 == free frame
+        size_t   pageIndex = 0;
+        uint64_t lastAccess = 0;   // tracks LRU via an internal clock tick
     };
 
     size_t frameSize;
@@ -47,14 +56,13 @@ private:
 
     std::unordered_map<void*, Allocation> allocations;  
     int nextAllocId;
+    
+    uint64_t internalClock; // Increments on every page access to determine LRU
 
     size_t numPagedIn;
     size_t numPagedOut;
 
     std::mutex mutex;
-
-    void*  frameToPointer(size_t frameIndex);
-    size_t pointerToFrame(void* ptr) const;
 
     void pageOutFrame(size_t frameIndex, int allocId, size_t pageIndex);
     void pageInFrame(size_t frameIndex, int allocId, size_t pageIndex);
