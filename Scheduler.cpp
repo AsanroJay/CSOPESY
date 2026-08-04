@@ -481,8 +481,21 @@ std::shared_ptr<Process> Scheduler::createCustomProcess(const std::string& name,
                                                         const std::string& instructions,
                                                         std::string& outError) {
     std::vector<std::shared_ptr<ICommand>> commands;
-    if (!InstructionParser::parse(instructions, commands, outError)) {
+    size_t highestAddress = 0;
+    if (!InstructionParser::parse(instructions, commands, outError, &highestAddress)) {
         return nullptr;
+    }
+
+    // memorySize == 0 means the command omitted the size, which the spec's own
+    // sample usage does. Give the process enough room for every address it
+    // references, rounded up to a power of 2 within the legal range. An
+    // explicitly supplied size is honoured as-is, so an out-of-range access
+    // still raises a violation exactly as before.
+    if (memorySize == 0) {
+        memorySize = Config::minMemPerProc;
+        while (memorySize < highestAddress && memorySize < 65536) {
+            memorySize <<= 1;
+        }
     }
 
     int pid = nextPid.fetch_add(1);

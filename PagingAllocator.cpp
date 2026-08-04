@@ -24,16 +24,23 @@ PagingAllocator::PagingAllocator(size_t maxMemory, size_t frameSize)
     for (size_t i = 0; i < numFrames; ++i) {
         freeFrameList.push_back(i);
     }
+
+    // pageOutFrame appends, so without this the file would accumulate entries
+    // across runs and show pages from previous sessions. Start each run clean.
+    std::ofstream reset(kBackingStorePath, std::ios::trunc);
 }
 
 void* PagingAllocator::allocate(size_t size) {
     std::lock_guard<std::mutex> lock(mutex);
 
     size_t numFramesNeeded = (size + frameSize - 1) / frameSize;  // ceil
-    
-    // Failsafe: If a single process requires more frames than the entire RAM, reject it
-    if (numFramesNeeded == 0 || numFramesNeeded > numFrames) {
-        return nullptr;  
+
+    // Demand paging brings pages in one at a time, so a process needing more
+    // pages than there are frames is still perfectly runnable -- it just faults
+    // more often. Only a zero-page request, or a system with no frames at all,
+    // is impossible to serve.
+    if (numFramesNeeded == 0 || numFrames == 0) {
+        return nullptr;
     }
 
     // --- VIRTUAL ALLOCATION ONLY ---
@@ -166,6 +173,13 @@ void PagingAllocator::pageInFrame(size_t frameIndex, int allocId, size_t pageInd
 size_t PagingAllocator::getNumPagedIn() const  { return numPagedIn; }
 size_t PagingAllocator::getNumPagedOut() const { return numPagedOut; }
 
+size_t PagingAllocator::getCurrentAllocatedSize() const {
+    std::lock_guard<std::mutex> lock(mutex);
+    // An evicted frame is handed straight to the faulting page rather than
+    // returned to the free list, so this count never dips during a swap.
+    return (numFrames - freeFrameList.size()) * frameSize;
+}
+
 String PagingAllocator::visualizeMemory() {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -190,7 +204,7 @@ String PagingAllocator::visualizeMemory() {
 }
 
 size_t PagingAllocator::getProcessResidentMemory(void* handle) const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mutex));
+    std::lock_guard<std::mutex> lock(mutex);
     auto it = allocations.find(handle);
     if (it == allocations.end()) return 0;
 
