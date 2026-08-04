@@ -546,16 +546,6 @@ void Scheduler::printStatus(std::ostream& os) {
         }
     }
 
-    os << "\nTerminated processes (memory access violation):\n";
-    for (const auto& process : allProcesses) {
-        if (process->isTerminated()) {
-            os << std::left << std::setw(12) << process->getName()
-               << "(" << process->getCreatedAt() << ")  "
-               << "Shut down at " << process->getViolationTime()
-               << "   " << process->getInvalidAddress() << " invalid\n";
-        }
-    }
-
     os << "------------------------------------\n";
 }
 
