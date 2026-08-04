@@ -39,6 +39,8 @@ public:
     // Returns true if the page is resident, false if it page-faulted.
     bool accessPage(int pid, size_t virtualAddress);
 
+    size_t getProcessResidentMemory(int pid) const;
+
 private:
     int maxOverallMem;
     int memPerFrame;

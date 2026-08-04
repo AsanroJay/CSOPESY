@@ -34,6 +34,8 @@ public:
     // Returns false if a page fault occurred (the page was just loaded into a frame).
     bool accessPage(void* handle, size_t pageIndex) override;
 
+    size_t getProcessResidentMemory(void* handle) const override;
+
 private:
     struct Allocation {
         int                         ownerId;    // synthetic id standing in for a PID

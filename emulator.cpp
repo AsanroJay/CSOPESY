@@ -208,26 +208,28 @@ int main() {
         }
         else if (command == "process-smi") {
             std::cout << "--------------------------------------------------\n";
-            std::cout << "PROCESS-SMI\n";
+            std::cout << "| PROCESS-SMI V01.00 Driver Version: 01.00       |\n";
             std::cout << "--------------------------------------------------\n";
             std::cout << "CPU-Util: " << scheduler->getCpuUtilization() << "%\n";
             size_t used = scheduler->getUsedMemory();
             size_t total = scheduler->getTotalMemory();
             std::cout << "Memory Usage: " << used << "B / " << total << "B\n";
             std::cout << "Memory Util: " << (total ? (used * 100 / total) : 0) << "%\n";
+            std::cout << "==================================================\n";
+            std::cout << "Running processes and memory usage:\n";
             std::cout << "--------------------------------------------------\n";
-            std::cout << "Running Processes:\n";
             
             auto runningProcesses = scheduler->getRunningProcesses();
-            if (runningProcesses.empty()) {
-                std::cout << " (none)\n";
-            } else {
-                for (const auto& p : runningProcesses) {
-
-                    std::cout << p->getName() 
-                              << " [PID: " << p->getPID() << "]"
-                              << " Mem: " << p->getMemorySize() << "B\n";
+            bool anyPrinted = false;
+            for (const auto& p : runningProcesses) {
+                size_t residentMem = scheduler->getProcessResidentMemory(p->getPID());
+                if (residentMem > 0) { // Only list processes currently occupying physical RAM
+                    std::cout << p->getName() << " " << residentMem << "B\n";
+                    anyPrinted = true;
                 }
+            }
+            if (!anyPrinted) {
+                std::cout << "(none)\n";
             }
             std::cout << "--------------------------------------------------\n";
         }
