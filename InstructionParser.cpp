@@ -28,7 +28,6 @@ std::string toUpper(const std::string& text) {
     return result;
 }
 
-// The spec writes escaped quotes inside the instruction string, e.g.
 // PRINT(\"Result: \" + varC). Drop the backslashes so quotes are plain.
 std::string unescapeQuotes(const std::string& text) {
     std::string result;
@@ -173,7 +172,8 @@ std::shared_ptr<ICommand> parsePrint(const std::string& instruction, std::string
     return std::make_shared<PrintCommand>("", inner);
 }
 
-std::shared_ptr<ICommand> parseOne(const std::string& instruction, std::string& error) {
+std::shared_ptr<ICommand> parseOne(const std::string& instruction, std::string& error,
+                                   size_t& highestAddress) {
     // PRINT carries parentheses, so key off the text before '(' when present.
     size_t keywordEnd = instruction.find_first_of(" \t(");
     std::string keyword = toUpper(keywordEnd == std::string::npos ? instruction
@@ -230,6 +230,7 @@ std::shared_ptr<ICommand> parseOne(const std::string& instruction, std::string& 
             error = "READ expects <var> <address>";
             return nullptr;
         }
+        highestAddress = std::max(highestAddress, static_cast<size_t>(address) + 2);
         return std::make_shared<ReadCommand>(tokens[0], static_cast<size_t>(address));
     }
 
@@ -252,6 +253,7 @@ std::shared_ptr<ICommand> parseOne(const std::string& instruction, std::string& 
             error = "WRITE has an invalid value";
             return nullptr;
         }
+        highestAddress = std::max(highestAddress, static_cast<size_t>(address) + 2);
         return std::make_shared<WriteCommand>(static_cast<size_t>(address), operand);
     }
 
@@ -263,9 +265,13 @@ std::shared_ptr<ICommand> parseOne(const std::string& instruction, std::string& 
 
 bool InstructionParser::parse(const std::string& text,
                               std::vector<std::shared_ptr<ICommand>>& outCommands,
-                              std::string& outError) {
+                              std::string& outError,
+                              size_t* outHighestAddress) {
     outCommands.clear();
     outError.clear();
+
+    size_t highestAddress = 0;
+    if (outHighestAddress) *outHighestAddress = 0;
 
     std::vector<std::string> instructions = splitInstructions(unescapeQuotes(text));
 
@@ -275,7 +281,7 @@ bool InstructionParser::parse(const std::string& text,
     }
 
     for (const std::string& instruction : instructions) {
-        std::shared_ptr<ICommand> command = parseOne(instruction, outError);
+        std::shared_ptr<ICommand> command = parseOne(instruction, outError, highestAddress);
         if (command == nullptr) {
             if (outError.empty()) outError = "could not parse \"" + instruction + "\"";
             outCommands.clear();
@@ -284,5 +290,6 @@ bool InstructionParser::parse(const std::string& text,
         outCommands.push_back(command);
     }
 
+    if (outHighestAddress) *outHighestAddress = highestAddress;
     return true;
 }

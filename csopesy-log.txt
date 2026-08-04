@@ -1,12 +1,13 @@
-CPU utilization: 100%
-Cores used: 4
-Cores available: 0
+CPU utilization: 50%
+Cores used: 1
+Cores available: 1
 ------------------------------------
 Running processes:
-p03         (06/27/2026 07:50:47PM)  Core: 0   599 / 1333
-p13         (06/27/2026 07:51:03PM)  Core: 1   313 / 1273
-p31         (06/27/2026 07:51:31PM)  Core: 2   132 / 1416
-p38         (06/27/2026 07:51:42PM)  Core: 3   70 / 1725
+p32         (08/04/2026 04:40:42PM)  Core: 1   4 / 100
 
 Finished processes:
+proc1       (08/04/2026 04:40:30PM)  Finished   6 / 6
+zeroread    (08/04/2026 04:40:35PM)  Finished   2 / 2
+symcap      (08/04/2026 04:40:37PM)  Finished   35 / 35
+clamp       (08/04/2026 04:40:39PM)  Finished   6 / 6
 ------------------------------------

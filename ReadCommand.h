@@ -6,8 +6,6 @@
 
 #include "ICommand.h"
 
-// READ(var, address) retrieves a uint16 from the process's memory and stores it
-// in `var`. Memory that was never written reads back as 0.
 class ReadCommand : public ICommand {
 public:
     ReadCommand(const std::string& variableName, size_t address);
@@ -17,4 +15,9 @@ public:
 private:
     std::string variableName;
     size_t      address;
+
+    // The source address and the destination variable can sit on different
+    // pages; see WriteCommand for why the fetched value is held across retries.
+    bool     valueCached = false;
+    uint16_t cachedValue = 0;
 };
