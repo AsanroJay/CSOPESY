@@ -6,7 +6,7 @@ CSOPESY Group 11 Members:
 
 How to Run:
 1. Open CLI in folder directory.
-2. Type 'g++ *.cpp -o <exe_name>*' to compile the project and create a .exe file.
+2. Type 'g++ \*.cpp -o <exe_name>*' to compile the project and create a .exe file.
 3. Type '<exe_name>' to run the .exe file.
 
 **Entry file of the program: emulator.cpp**
