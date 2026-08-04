@@ -35,11 +35,11 @@ void* PagingAllocator::allocate(size_t size) {
 
     size_t numFramesNeeded = (size + frameSize - 1) / frameSize;  // ceil
 
-    // Demand paging brings pages in one at a time, so a process needing more
-    // pages than there are frames is still perfectly runnable -- it just faults
-    // more often. Only a zero-page request, or a system with no frames at all,
-    // is impossible to serve.
-    if (numFramesNeeded == 0 || numFrames == 0) {
+    // A process whose page table cannot fit in physical memory can never be
+    // made resident, so refuse it outright. The scheduler leaves it in the ready
+    // queue and CPU utilisation stays at 0% -- the deadlock-under-memory-
+    // pressure behaviour the spec describes, rather than endless thrashing.
+    if (numFramesNeeded == 0 || numFramesNeeded > numFrames) {
         return nullptr;
     }
 
