@@ -246,6 +246,27 @@ void Scheduler::runSingleCycleStep() {
         }
     }
 
+    
+    // C. RR preemption check — before ticking, check if quantum expired - NEW this is why RR failed last time
+    if (isRR) {
+        for (int i = 0; i < numCores; ++i) {
+            CoreSlot& core = *cores[i];
+            std::lock_guard<std::mutex> coreLock(core.mutex);
+            if (core.current != nullptr && core.quantumTicks >= Config::quantumCycles) {
+                // Preempt: send back to rear of ready queue
+                auto process = core.current;
+                process->setState(Process::READY);
+                process->setCoreId(-1);
+                {
+                    std::lock_guard<std::mutex> queueLock(queueMutex);
+                    readyQueue.push(process);
+                }
+                core.current      = nullptr;
+                core.quantumTicks = 0;
+            }
+        }
+    }
+
     // B. Dispatcher: assign ready processes to free cores.
     //
     // A process must hold memory before it can run. If it isn't resident yet we
@@ -282,26 +303,6 @@ void Scheduler::runSingleCycleStep() {
                 core.quantumTicks  = 0;
                 core.stepCompleted = false;
                 break;
-            }
-        }
-    }
-
-    // C. RR preemption check — before ticking, check if quantum expired
-    if (isRR) {
-        for (int i = 0; i < numCores; ++i) {
-            CoreSlot& core = *cores[i];
-            std::lock_guard<std::mutex> coreLock(core.mutex);
-            if (core.current != nullptr && core.quantumTicks >= Config::quantumCycles) {
-                // Preempt: send back to rear of ready queue
-                auto process = core.current;
-                process->setState(Process::READY);
-                process->setCoreId(-1);
-                {
-                    std::lock_guard<std::mutex> queueLock(queueMutex);
-                    readyQueue.push(process);
-                }
-                core.current      = nullptr;
-                core.quantumTicks = 0;
             }
         }
     }
