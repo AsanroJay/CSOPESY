@@ -92,6 +92,9 @@ private:
     // Builds the instruction stream for a generated process.
     void populateRandomInstructions(const std::shared_ptr<Process>& process);
 
+    // Assigns ready processes to free cores, subject to memory admission.
+    void dispatchReadyProcesses();
+
     // Memory-snapshot bookkeeping. Snapshots begin once the scheduler starts
     // generating processes; one file is emitted every `quantum-cycles`.
     std::atomic<bool>     snapshotsEnabled{false};
