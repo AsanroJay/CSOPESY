@@ -24,10 +24,16 @@ public:
     virtual size_t getNumPagedOut() const { return 0; }
 
     // --- NEW: Add the virtual access seam here ---
-   virtual bool accessPage(void* handle, size_t pageIndex) { return true; }
+    // Parameters are unnamed in this default: an allocator without demand
+    // paging reports every access as a hit and holds no resident pages.
+    virtual bool accessPage(void* /*handle*/, size_t /*pageIndex*/) { return true; }
 
-   // For process-smi
-   virtual size_t getProcessResidentMemory(void* handle) const { return 0; }
+    // For process-smi
+    virtual size_t getProcessResidentMemory(void* /*handle*/) const { return 0; }
+
+    // Total physical frames. The scheduler uses this to avoid dispatching more
+    // processes than memory can back; 0 means "no limit".
+    virtual size_t getFrameCount() const { return 0; }
 protected:
     MemoryAllocatorType memoryAllocatorType;
     struct MemoryBlock {

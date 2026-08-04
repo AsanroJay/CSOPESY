@@ -41,6 +41,8 @@ public:
 
     size_t getProcessResidentMemory(void* handle) const override;
 
+    size_t getFrameCount() const override { return numFrames; }
+
 private:
     struct Allocation {
         int                         ownerId;    // synthetic id standing in for a PID
