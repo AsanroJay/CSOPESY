@@ -233,9 +233,6 @@ int main() {
                         cout << "Process " << processName << " shut down due to memory access violation error that occurred at " 
                              << process->getViolationTime() << ". " << process->getInvalidAddress() << " invalid.\n"; 
                     } 
-                    else if (process->isFinished()) {
-                        cout << "Process " << processName << " not found.\n";
-                    } 
                     else {
                         process->attachScreen();
                         displayProcessScreen(*process);
