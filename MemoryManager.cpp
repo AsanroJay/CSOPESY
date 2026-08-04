@@ -78,6 +78,10 @@ size_t MemoryManager::getNumPagedOut() const {
     return 0;
 }
 
+size_t MemoryManager::getFrameCount() const {
+    return allocator ? allocator->getFrameCount() : 0;
+}
+
 bool MemoryManager::accessPage(int pid, size_t virtualAddress) {
     std::lock_guard<std::mutex> lock(mutex);
     

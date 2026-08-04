@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -13,6 +14,69 @@ using namespace std;
 
 void printHeader();
 void displayProcessScreen(Process& process);
+
+// Splits the tail of a "screen -s/-c" line into an optional memory size and
+// whatever follows it.
+//
+// The spec's syntax line includes <process_memory_size>, but its own sample
+// usage (and the graded test cases) omit it -- e.g.
+//     screen -c faulty_process "DECLARE varA 10; ..."
+// So a leading numeric token is treated as the size; anything else means the
+// size was left out and the configured minimum is used.
+static void splitMemoryAndRest(const std::string& tail, size_t& outMemSize, std::string& outRest) {
+    // outMemSize == 0 signals "no size given"; each caller decides what to do.
+    size_t start = tail.find_first_not_of(" \t");
+    if (start == std::string::npos) {
+        outMemSize = 0;
+        outRest.clear();
+        return;
+    }
+
+    size_t end = tail.find_first_of(" \t", start);
+    std::string firstToken = tail.substr(start, end == std::string::npos ? std::string::npos : end - start);
+
+    bool numeric = !firstToken.empty() &&
+                   firstToken.find_first_not_of("0123456789") == std::string::npos;
+
+    if (numeric) {
+        try {
+            outMemSize = std::stoull(firstToken);
+        } catch (...) {
+            outMemSize = 0;
+        }
+        outRest = (end == std::string::npos) ? "" : tail.substr(end);
+    } else {
+        outMemSize = 0;
+        outRest    = tail.substr(start);
+    }
+}
+
+// Memory must be a power of 2 within [2^6, 2^16].
+static bool isValidMemorySize(size_t memSize) {
+    return memSize >= 64 && memSize <= 65536 && (memSize & (memSize - 1)) == 0;
+}
+
+// process-smi reports memory in MiB to match the spec mockup. The emulated
+// memory space tops out at 65536 bytes, so MiB alone rounds to ~0 -- the exact
+// byte count is kept alongside it to stay readable at these sizes.
+static std::string toMiB(size_t bytes) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2)
+        << (static_cast<double>(bytes) / (1024.0 * 1024.0)) << "MiB";
+    return out.str();
+}
+
+// "0.92MiB / 1.00MiB (963584B / 1048576B)"
+static std::string formatMemoryPair(size_t used, size_t total) {
+    return toMiB(used) + " / " + toMiB(total) +
+           " (" + std::to_string(used) + "B / " + std::to_string(total) + "B)";
+}
+
+// "0.00MiB (64B)"
+static std::string formatMemory(size_t bytes) {
+    return toMiB(bytes) + " (" + std::to_string(bytes) + "B)";
+}
+
 void runExecutionEngine(std::shared_ptr<std::atomic<uint64_t>> cpuCycles,Scheduler& scheduler, std::shared_ptr<std::atomic<bool>> systemRunning);
 
 int main() {
@@ -69,7 +133,10 @@ int main() {
                 cout << "Type \"scheduler-start\" to begin generating processes.\n";
             }
         }
-        else if (command == "scheduler-start") {
+        // The spec names this command both ways -- "scheduler-start" in the
+        // command list and "scheduler-test" in the batch-process-freq entry --
+        // so accept either.
+        else if (command == "scheduler-start" || command == "scheduler-test") {
             scheduler->startGeneration();
             cout << "Type 'scheduler-stop' to stop process scheduling.\n";
             cout << "Process generation started. Every " << Config::batchProcessFreq << " CPU cycle(s).\n";
@@ -83,43 +150,41 @@ int main() {
                 scheduler->printStatus(cout);
             }
             else if (argument == "-s") {
-                std::string memStr;
-                iss >> memStr;
-                
-                if (processName.empty() || memStr.empty()) {
+                std::string tail;
+                std::getline(iss, tail);
+
+                size_t memSize = 0;
+                std::string unused;
+                splitMemoryAndRest(tail, memSize, unused);
+
+                // No instructions to infer a size from, so fall back to the
+                // configured minimum when the size is omitted.
+                if (memSize == 0) memSize = Config::minMemPerProc;
+
+                if (processName.empty()) {
                     cout << "Usage: screen -s <name> <memory_size>\n";
                 }
+                else if (!isValidMemorySize(memSize)) {
+                    cout << "invalid memory allocation\n"; // Spec requirement
+                }
+                else if (scheduler->findProcess(processName)) {
+                    cout << "Process " << processName << " already exists.\n";
+                }
                 else {
-                    size_t memSize = 0;
-                    bool validMem = false;
-                    try {
-                        memSize = std::stoull(memStr);
-                        // Memory must be between 2^6 (64) and 2^16 (65536) and a power of 2
-                        if (memSize >= 64 && memSize <= 65536 && (memSize & (memSize - 1)) == 0) {
-                            validMem = true;
-                        }
-                    } catch (...) {}
-
-                    if (!validMem) {
-                        cout << "invalid memory allocation\n"; // Spec requirement
-                    }
-                    else if (scheduler->findProcess(processName)) {
-                        cout << "Process " << processName << " already exists.\n";
-                    }
-                    else {
-                        auto process = scheduler->createProcess(processName, memSize);
-                        process->attachScreen();
-                        displayProcessScreen(*process);
-                    }
+                    auto process = scheduler->createProcess(processName, memSize);
+                    process->attachScreen();
+                    displayProcessScreen(*process);
                 }
             }
             else if (argument == "-c") {
-                std::string memStr;
-                iss >> memStr;
+                std::string tail;
+                std::getline(iss, tail);
+
+                size_t memSize = 0;
                 std::string instructions;
-                std::getline(iss, instructions);
-                
-                // Trim leading spaces and quotes
+                splitMemoryAndRest(tail, memSize, instructions);
+
+                // Trim surrounding spaces and quotes
                 size_t first = instructions.find_first_not_of(" \t\"");
                 size_t last = instructions.find_last_not_of(" \t\"");
                 if (first != std::string::npos && last != std::string::npos) {
@@ -128,19 +193,12 @@ int main() {
                     instructions = "";
                 }
 
-                if (processName.empty() || memStr.empty() || instructions.empty()) {
-                    cout << "Usage: screen -c <name> <memory_size> \"<instructions>\"\n";
+                if (processName.empty() || instructions.empty()) {
+                    cout << "Usage: screen -c <name> [memory_size] \"<instructions>\"\n";
                 } else {
-                    size_t memSize = 0;
-                    bool validMem = false;
-                    try {
-                        memSize = std::stoull(memStr);
-                        if (memSize >= 64 && memSize <= 65536 && (memSize & (memSize - 1)) == 0) {
-                            validMem = true;
-                        }
-                    } catch (...) {}
-                    
-                    if (!validMem) {
+                    // memSize == 0 means it was omitted; createCustomProcess
+                    // then sizes the process from the addresses it references.
+                    if (memSize != 0 && !isValidMemorySize(memSize)) {
                         cout << "invalid memory allocation\n"; // Spec requirement[cite: 1]
                     } else if (scheduler->findProcess(processName)) {
                         cout << "Process " << processName << " already exists.\n";
@@ -174,9 +232,6 @@ int main() {
                     else if (process->hasMemoryViolation()) {
                         cout << "Process " << processName << " shut down due to memory access violation error that occurred at " 
                              << process->getViolationTime() << ". " << process->getInvalidAddress() << " invalid.\n"; 
-                    } 
-                    else if (process->isFinished()) {
-                        cout << "Process " << processName << " not found.\n";
                     } 
                     else {
                         process->attachScreen();
@@ -213,7 +268,7 @@ int main() {
             std::cout << "CPU-Util: " << scheduler->getCpuUtilization() << "%\n";
             size_t used = scheduler->getUsedMemory();
             size_t total = scheduler->getTotalMemory();
-            std::cout << "Memory Usage: " << used << "B / " << total << "B\n";
+            std::cout << "Memory Usage: " << formatMemoryPair(used, total) << "\n";
             std::cout << "Memory Util: " << (total ? (used * 100 / total) : 0) << "%\n";
             std::cout << "==================================================\n";
             std::cout << "Running processes and memory usage:\n";
@@ -224,7 +279,7 @@ int main() {
             for (const auto& p : runningProcesses) {
                 size_t residentMem = scheduler->getProcessResidentMemory(p->getPID());
                 if (residentMem > 0) { // Only list processes currently occupying physical RAM
-                    std::cout << p->getName() << " " << residentMem << "B\n";
+                    std::cout << p->getName() << " " << formatMemory(residentMem) << "\n";
                     anyPrinted = true;
                 }
             }

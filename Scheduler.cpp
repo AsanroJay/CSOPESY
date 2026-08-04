@@ -252,7 +252,8 @@ void Scheduler::runSingleCycleStep() {
         for (int i = 0; i < numCores; ++i) {
             CoreSlot& core = *cores[i];
             std::lock_guard<std::mutex> coreLock(core.mutex);
-            if (core.current != nullptr && core.quantumTicks >= Config::quantumCycles) {
+            if (core.current != nullptr &&
+                static_cast<uint64_t>(core.quantumTicks) >= Config::quantumCycles) {
                 // Preempt: send back to rear of ready queue
                 auto process = core.current;
                 process->setState(Process::READY);
@@ -268,44 +269,7 @@ void Scheduler::runSingleCycleStep() {
     }
 
     // B. Dispatcher: assign ready processes to free cores.
-    //
-    // A process must hold memory before it can run. If it isn't resident yet we
-    // attempt an allocation; when memory is full the process reverts to the
-    // TAIL of the ready queue and the core is left idle for this cycle. We
-    // bound the retries per core to the queue length so a fully-occupied memory
-    // doesn't spin.
-    {
-        std::lock_guard<std::mutex> queueLock(queueMutex);
-        for (int i = 0; i < numCores; ++i) {
-            CoreSlot& core = *cores[i];
-            std::unique_lock<std::mutex> coreLock(core.mutex);
-            if (core.current != nullptr) continue;
-
-            int attempts = static_cast<int>(readyQueue.size());
-            while (attempts-- > 0 && !readyQueue.empty()) {
-                auto process = readyQueue.front();
-                readyQueue.pop();
-
-                if (process->isFinished()) continue;  // finished or shut down
-
-                if (!memory.isAllocated(process->getPID())) {
-                    int base = memory.allocate(process->getPID(), process->getMemorySize());
-                    if (base < 0) {
-                        // Memory full: send back to the rear of the ready queue.
-                        readyQueue.push(process);
-                        continue;
-                    }
-                }
-
-                process->setCoreId(i);
-                process->setState(Process::RUNNING);
-                core.current       = process;
-                core.quantumTicks  = 0;
-                core.stepCompleted = false;
-                break;
-            }
-        }
-    }
+    dispatchReadyProcesses();
 
     // D. Tick Broadcast
     for (int i = 0; i < numCores; ++i) {
@@ -341,6 +305,12 @@ void Scheduler::runSingleCycleStep() {
         }
     }
 
+    // Refill cores that a process just vacated (finished, or went to sleep)
+    // rather than leaving them empty until the next cycle. A core otherwise
+    // sits idle for a full tick every time an instruction sleeps, which reads
+    // as CPU utilisation dipping below 100% while work is still queued.
+    dispatchReadyProcesses();
+
     // NEW: Safely add to our atomic counters
     activeTicks.fetch_add(activeCoresThisTick);
     idleTicks.fetch_add(idleCoresThisTick);
@@ -348,6 +318,65 @@ void Scheduler::runSingleCycleStep() {
 
     // F. Memory snapshot: dump the memory map once per quantum-cycles.
     maybeWriteMemorySnapshot(currentCycle);
+}
+
+// Assigns ready processes to any free cores.
+//
+// A process must hold memory before it can run. If it isn't resident yet we
+// attempt an allocation; when memory is full the process reverts to the TAIL of
+// the ready queue and the core is left idle for this cycle. Retries per core are
+// bounded by the queue length so a fully-occupied memory doesn't spin.
+//
+// Admission control: a process needs at least one frame (its symbol table page)
+// to make any progress, so never run more processes at once than there are
+// frames. Without this, every core takes a process regardless of how little
+// memory exists and CPU utilisation reads 100% while the system is really
+// thrashing on a single frame.
+void Scheduler::dispatchReadyProcesses() {
+    int runningProcesses = 0;
+    for (int i = 0; i < numCores; ++i) {
+        std::lock_guard<std::mutex> coreLock(cores[i]->mutex);
+        if (cores[i]->current != nullptr) ++runningProcesses;
+    }
+
+    const size_t frameCount = memory.getFrameCount();
+    const int maxConcurrent = (frameCount == 0)
+                                  ? numCores
+                                  : std::max(1, static_cast<int>(std::min<size_t>(frameCount, static_cast<size_t>(numCores))));
+
+    std::lock_guard<std::mutex> queueLock(queueMutex);
+    for (int i = 0; i < numCores; ++i) {
+        if (runningProcesses >= maxConcurrent) break;  // memory can't back another
+
+        CoreSlot& core = *cores[i];
+        std::unique_lock<std::mutex> coreLock(core.mutex);
+        if (core.current != nullptr) continue;
+
+        int attempts = static_cast<int>(readyQueue.size());
+        while (attempts-- > 0 && !readyQueue.empty()) {
+            auto process = readyQueue.front();
+            readyQueue.pop();
+
+            if (process->isFinished()) continue;  // finished or shut down
+
+            if (!memory.isAllocated(process->getPID())) {
+                int base = memory.allocate(process->getPID(), process->getMemorySize());
+                if (base < 0) {
+                    // Memory full: send back to the rear of the ready queue.
+                    readyQueue.push(process);
+                    continue;
+                }
+            }
+
+            process->setCoreId(i);
+            process->setState(Process::RUNNING);
+            core.current       = process;
+            core.quantumTicks  = 0;
+            core.stepCompleted = false;
+            ++runningProcesses;
+            break;
+        }
+    }
 }
 
 void Scheduler::maybeWriteMemorySnapshot(uint64_t currentCycle) {
@@ -481,8 +510,21 @@ std::shared_ptr<Process> Scheduler::createCustomProcess(const std::string& name,
                                                         const std::string& instructions,
                                                         std::string& outError) {
     std::vector<std::shared_ptr<ICommand>> commands;
-    if (!InstructionParser::parse(instructions, commands, outError)) {
+    size_t highestAddress = 0;
+    if (!InstructionParser::parse(instructions, commands, outError, &highestAddress)) {
         return nullptr;
+    }
+
+    // memorySize == 0 means the command omitted the size, which the spec's own
+    // sample usage does. Give the process enough room for every address it
+    // references, rounded up to a power of 2 within the legal range. An
+    // explicitly supplied size is honoured as-is, so an out-of-range access
+    // still raises a violation exactly as before.
+    if (memorySize == 0) {
+        memorySize = Config::minMemPerProc;
+        while (memorySize < highestAddress && memorySize < 65536) {
+            memorySize <<= 1;
+        }
     }
 
     int pid = nextPid.fetch_add(1);

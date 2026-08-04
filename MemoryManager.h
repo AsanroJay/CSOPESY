@@ -41,6 +41,9 @@ public:
 
     size_t getProcessResidentMemory(int pid) const;
 
+    // Total physical frames (max-overall-mem / mem-per-frame).
+    size_t getFrameCount() const;
+
 private:
     int maxOverallMem;
     int memPerFrame;

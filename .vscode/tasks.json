@@ -1,4 +1,4 @@
-{
+﻿{
     "tasks": [
         {
             "type": "cppbuild",
@@ -9,23 +9,28 @@
                 "-g",
                 "-std=c++20",
                 "-pthread",
-                "${fileDirname}\\emulator.cpp",
-                "${fileDirname}\\ArithmeticCommand.cpp",
-                "${fileDirname}\\Config.cpp",
-                "${fileDirname}\\DeclareCommand.cpp",
-                "${fileDirname}\\ForCommand.cpp",
-                "${fileDirname}\\MemoryManager.cpp",
-                "${fileDirname}\\PrintCommand.cpp",
-                "${fileDirname}\\Process.cpp",
-                "${fileDirname}\\Scheduler.cpp",
-                "${fileDirname}\\SleepCommand.cpp",
-                "${fileDirname}\\SymbolTable.cpp",
-                "${fileDirname}\\Utils.cpp",
+                "${workspaceFolder}\\emulator.cpp",
+                "${workspaceFolder}\\ArithmeticCommand.cpp",
+                "${workspaceFolder}\\Config.cpp",
+                "${workspaceFolder}\\DeclareCommand.cpp",
+                "${workspaceFolder}\\ForCommand.cpp",
+                "${workspaceFolder}\\InstructionParser.cpp",
+                "${workspaceFolder}\\MemoryManager.cpp",
+                "${workspaceFolder}\\PagingAllocator.cpp",
+                "${workspaceFolder}\\PrintCommand.cpp",
+                "${workspaceFolder}\\Process.cpp",
+                "${workspaceFolder}\\ProcessMemory.cpp",
+                "${workspaceFolder}\\ReadCommand.cpp",
+                "${workspaceFolder}\\Scheduler.cpp",
+                "${workspaceFolder}\\SleepCommand.cpp",
+                "${workspaceFolder}\\SymbolTable.cpp",
+                "${workspaceFolder}\\Utils.cpp",
+                "${workspaceFolder}\\WriteCommand.cpp",
                 "-o",
-                "${fileDirname}\\emulator.exe"
+                "${workspaceFolder}\\emulator.exe"
             ],
             "options": {
-                "cwd": "${fileDirname}"
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [
                 "$gcc"

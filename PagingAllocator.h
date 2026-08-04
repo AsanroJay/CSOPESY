@@ -28,6 +28,11 @@ public:
     size_t getNumPagedIn() const override;
     size_t getNumPagedOut() const override;
 
+    // Derived from the free list under the lock. The running counter dips
+    // transiently mid-eviction, so reading it unsynchronised can report 0 used
+    // memory while the system is actually full.
+    size_t getCurrentAllocatedSize() const override;
+
 
     // The access seam for demand paging.
     // Returns true if the page was already resident (a hit).
@@ -35,6 +40,8 @@ public:
     bool accessPage(void* handle, size_t pageIndex) override;
 
     size_t getProcessResidentMemory(void* handle) const override;
+
+    size_t getFrameCount() const override { return numFrames; }
 
 private:
     struct Allocation {
@@ -64,7 +71,7 @@ private:
     size_t numPagedIn;
     size_t numPagedOut;
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
 
     void pageOutFrame(size_t frameIndex, int allocId, size_t pageIndex);
     void pageInFrame(size_t frameIndex, int allocId, size_t pageIndex);

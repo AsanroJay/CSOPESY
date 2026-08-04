@@ -1,0 +1,30 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run CSOPESY Emulator",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}\\emulator.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            // Must be true. The emulator calls system("cls") when entering a
+            // process screen; VS Code's Debug Console is not a real terminal,
+            // so the clear sequence leaks through as literal control bytes and
+            // garbles the output. An external console handles it correctly.
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:\\msys64\\ucrt64\\bin\\gdb.exe",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "C/C++: g++.exe build active file"
+        }
+    ]
+}

@@ -33,10 +33,21 @@ void Process::executeCurrentCommand(int coreId) {
         return;
     }
 
-    bool completed = commandList[index]->execute(coreId, *this);
+    // "Page fault handling continuously occurs until a valid page has been
+    // returned, before an instruction is performed." The pager services the
+    // fault during the failed attempt, so retrying here lets the instruction
+    // complete in the same tick instead of costing a full cycle per fault --
+    // which otherwise starves processes under heavy thrashing. The attempt
+    // count is bounded so a page that can never be made resident yields the
+    // core rather than spinning.
+    constexpr int maxFaultRetries = 8;
 
-    // A command that reports "not yet" took a page fault, so the program
-    // counter stays put and the instruction is restarted on the next tick.
+    bool completed = false;
+    for (int attempt = 0; attempt < maxFaultRetries && !completed; ++attempt) {
+        completed = commandList[index]->execute(coreId, *this);
+        if (isTerminated()) return;  // access violation shut the process down
+    }
+
     if (completed) {
         commandCounter.fetch_add(1);
     }

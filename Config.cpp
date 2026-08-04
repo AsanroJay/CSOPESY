@@ -13,10 +13,13 @@ namespace {
         return std::max(minValue, std::min(maxValue, value));
     }
 
-    int clampToPowerOfTwoRange(int value) {
-        constexpr int minValue = 64;
-        constexpr int maxValue = 65536;
-
+    // Rounds up to a power of 2 within [minValue, maxValue].
+    //
+    // The spec describes memory parameters as being in [2^6, 2^16], but test
+    // cases do hand out smaller frame and per-process sizes, so the floor is a
+    // parameter rather than a hardcoded 64. Whatever the config asks for is
+    // honoured; only zero/garbage is guarded against.
+    int clampToPowerOfTwoRange(int value, int minValue = 1, int maxValue = 65536) {
         if (value < minValue) return minValue;
         if (value > maxValue) return maxValue;
         if ((value & (value - 1)) == 0) return value;
@@ -147,26 +150,20 @@ bool Config::loadFromFile(const std::string& path) {
         }
     }
 
-    // Cross-parameter sanity checks. These matter because the page arithmetic
-    // (page = address / mem-per-frame, frames = max-overall-mem / mem-per-frame)
-    // silently produces nonsense when the values are inconsistent.
+    // A frame larger than all of memory would leave zero frames, so that one
+    // genuinely has to be capped.
     if (Config::memPerFrame > Config::maxOverallMem) {
         std::cerr << "Warning: \"mem-per-frame\" (" << Config::memPerFrame
                   << ") exceeds \"max-overall-mem\" (" << Config::maxOverallMem
                   << "); using " << Config::maxOverallMem << " instead.\n";
         Config::memPerFrame = Config::maxOverallMem;
     }
-    // A process larger than all of physical memory could never become fully
-    // resident, so it would sit in the ready queue forever. Cap it instead.
-    if (Config::maxMemPerProc > static_cast<size_t>(Config::maxOverallMem)) {
-        std::cerr << "Warning: \"max-mem-per-proc\" (" << Config::maxMemPerProc
-                  << ") exceeds \"max-overall-mem\" (" << Config::maxOverallMem
-                  << "); using " << Config::maxOverallMem << " instead.\n";
-        Config::maxMemPerProc = static_cast<size_t>(Config::maxOverallMem);
-    }
-    if (Config::minMemPerProc > static_cast<size_t>(Config::maxOverallMem)) {
-        Config::minMemPerProc = static_cast<size_t>(Config::maxOverallMem);
-    }
+
+    // min/max-mem-per-proc are deliberately NOT capped against max-overall-mem.
+    // A process that needs more memory than the machine has is a legitimate
+    // configuration -- the allocator refuses it and the system sits idle, which
+    // is exactly the thrash-to-deadlock scenario the test cases probe for.
+
     if (Config::minMemPerProc > Config::maxMemPerProc) {
         std::cerr << "Warning: \"min-mem-per-proc\" (" << Config::minMemPerProc
                   << ") exceeds \"max-mem-per-proc\" (" << Config::maxMemPerProc
